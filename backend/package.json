@@ -11,7 +11,8 @@
     "db:migrate": "prisma migrate dev",
     "db:seed": "node src/utils/seed.js",
     "db:seed-doctors": "node src/utils/seedDoctors.js",
-    "db:reset": "prisma migrate reset"
+    "db:reset": "prisma migrate reset",
+    "postinstall": "npx prisma generate"
   },
   "dependencies": {
     "@prisma/client": "^5.10.0",
