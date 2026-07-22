@@ -12,7 +12,8 @@
     "db:seed": "node src/utils/seed.js",
     "db:seed-doctors": "node src/utils/seedDoctors.js",
     "db:reset": "prisma migrate reset",
-    "postbuild": "npx prisma generate && npx prisma db push && node src/utils/seed.js && node src/utils/seedDoctors.js"
+    "build": "npx prisma generate",
+    "postbuild": "npx prisma db push --skip-generate && node src/utils/seed.js && node src/utils/seedDoctors.js"
   },
   "dependencies": {
     "@prisma/client": "^5.10.0",
