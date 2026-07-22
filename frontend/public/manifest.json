@@ -1,0 +1,22 @@
+{
+  "name": "FinTrackr",
+  "short_name": "FinTrackr",
+  "description": "Multi-organization financial tracking and approval management system",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f5f7",
+  "theme_color": "#1a73e8",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/gcc-globe.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/gcc-globe.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
