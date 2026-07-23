@@ -8,7 +8,24 @@ const DUMMY_VALUES = ["--none--", "undefined", "null", "n/a", "na", "-"];
 const parseDate = (val) => {
   if (!val) return null;
   if (val instanceof Date) return val;
-  const d = new Date(val);
+
+  // Handle Excel serial date numbers
+  if (typeof val === "number") {
+    const d = new Date((val - 25569) * 86400 * 1000);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  const s = String(val).trim();
+
+  // Handle DD/MM/YYYY or DD-MM-YYYY
+  const dmyMatch = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (dmyMatch) {
+    const [, day, month, year] = dmyMatch;
+    const d = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  const d = new Date(s);
   return isNaN(d.getTime()) ? null : d;
 };
 
@@ -164,6 +181,7 @@ const importPatients = async (req, res) => {
 
     const dataRows = rows.slice(headerRowIndex + 1).filter((r) => r.some((c) => c != null && String(c).trim() !== ""));
     let created = 0;
+    let updated = 0;
     let skipped = 0;
     const errors = [];
 
@@ -187,28 +205,38 @@ const importPatients = async (req, res) => {
           continue;
         }
 
-        let uhidNo = cleanValue(row[headerIdx["UHID No"]]);
-        if (!uhidNo) {
-          uhidNo = `FT_${String(existingCount + created + 1).padStart(4, "0")}`;
-        }
-
-        const existing = await prisma.patient.findFirst({ where: { uhidNo } });
-        if (existing) {
-          skipped++;
-          errors.push({ row: headerRowIndex + 2 + i, reason: `Duplicate UHID: ${uhidNo}` });
-          continue;
-        }
-
         const regDate = parseDate(row[headerIdx["Reg.Date"]]);
         const address1 = cleanValue(row[headerIdx["Address1"]]);
         const age = parseIntSafe(row[headerIdx["Age"]]);
         const bloodGroup = cleanValue(row[headerIdx["Blood Group"]]);
         const mobileNo = cleanValue(row[headerIdx["Mobile NO"]]);
 
-        await prisma.patient.create({
-          data: { regDate, uhidNo, patientName, address1, age, bloodGroup, mobileNo },
-        });
-        created++;
+        let uhidNo = cleanValue(row[headerIdx["UHID No"]]);
+        let existing = null;
+
+        if (uhidNo) {
+          existing = await prisma.patient.findFirst({ where: { uhidNo } });
+        } else {
+          existing = await prisma.patient.findFirst({
+            where: { patientName, mobileNo: mobileNo || null },
+          });
+          if (!existing) {
+            uhidNo = `FT_${String(existingCount + created + 1).padStart(4, "0")}`;
+          }
+        }
+
+        if (existing) {
+          await prisma.patient.update({
+            where: { id: existing.id },
+            data: { regDate, uhidNo: uhidNo || existing.uhidNo, patientName, address1, age, bloodGroup, mobileNo },
+          });
+          updated++;
+        } else {
+          await prisma.patient.create({
+            data: { regDate, uhidNo, patientName, address1, age, bloodGroup, mobileNo },
+          });
+          created++;
+        }
       } catch (err) {
         skipped++;
         errors.push({ row: headerRowIndex + 2 + i, reason: err.message || "Import failed" });
@@ -219,6 +247,7 @@ const importPatients = async (req, res) => {
       message: "Import completed",
       total: dataRows.length,
       created,
+      updated,
       skipped,
       errors: errors.length > 0 ? errors : undefined,
     });

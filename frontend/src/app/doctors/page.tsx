@@ -125,10 +125,10 @@ export default function DoctorsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200/60">
-                <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Name</th>
-                <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Degree</th>
-                <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Desc Name</th>
-                <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Status</th>
+                <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden sm:table-cell">Name</th>
+                <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden md:table-cell">Degree</th>
+                <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Display Name</th>
+                <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden sm:table-cell">Status</th>
                 <th className="text-right px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
@@ -145,10 +145,10 @@ export default function DoctorsPage() {
               ) : (
                 doctors.map((doctor) => (
                   <tr key={doctor.id} className="hover:bg-slate-50/80">
-                    <td className="px-5 py-3.5 font-medium text-slate-700">{doctor.name}</td>
-                    <td className="px-5 py-3.5 text-slate-600">{doctor.degree}</td>
+                    <td className="px-5 py-3.5 font-medium text-slate-700 hidden sm:table-cell">{doctor.name}</td>
+                    <td className="px-5 py-3.5 text-slate-600 hidden md:table-cell">{doctor.degree}</td>
                     <td className="px-5 py-3.5 text-slate-500">{doctor.descName}</td>
-                    <td className="px-5 py-3.5">
+                    <td className="px-5 py-3.5 hidden sm:table-cell">
                       <Badge variant={doctor.isActive ? "success" : "danger"}>{doctor.isActive ? "Active" : "Inactive"}</Badge>
                     </td>
                     <td className="px-5 py-3.5 text-right">
@@ -201,7 +201,7 @@ export default function DoctorsPage() {
             required
           />
           <Input
-            label="Desc Name *"
+            label="Display Name *"
             value={form.descName}
             onChange={(e) => setForm({ ...form, descName: e.target.value })}
             placeholder="e.g. DR.John MBBS (Duty Dr)"

@@ -32,7 +32,7 @@ export default function PatientsPage() {
   const [form, setForm] = useState({ regDate: "", uhidNo: "", patientName: "", address1: "", age: "", bloodGroup: "", mobileNo: "" });
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState<{ created: number; skipped: number; total: number; errors?: { row: number; reason: string }[] } | null>(null);
+  const [importResult, setImportResult] = useState<{ created: number; updated: number; skipped: number; total: number; errors?: { row: number; reason: string }[] } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
@@ -180,10 +180,10 @@ export default function PatientsPage() {
               <tr className="border-b border-slate-200/60">
                 <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">UHID</th>
                 <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Name</th>
-                <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Age</th>
-                <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Blood Group</th>
+                <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden sm:table-cell">Age</th>
+                <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden md:table-cell">Blood Group</th>
                 <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Mobile</th>
-                <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Reg Date</th>
+                <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden sm:table-cell">Reg Date</th>
                 <th className="text-right px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
@@ -202,10 +202,10 @@ export default function PatientsPage() {
                   <tr key={p.id} className="hover:bg-slate-50/80">
                     <td className="px-5 py-3.5 font-medium text-slate-700">{p.uhidNo || "-"}</td>
                     <td className="px-5 py-3.5 text-slate-700">{p.patientName}</td>
-                    <td className="px-5 py-3.5 text-slate-500">{p.age ?? "-"}</td>
-                    <td className="px-5 py-3.5 text-slate-500">{p.bloodGroup || "-"}</td>
+                    <td className="px-5 py-3.5 text-slate-500 hidden sm:table-cell">{p.age ?? "-"}</td>
+                    <td className="px-5 py-3.5 text-slate-500 hidden md:table-cell">{p.bloodGroup || "-"}</td>
                     <td className="px-5 py-3.5 text-slate-500">{p.mobileNo || "-"}</td>
-                    <td className="px-5 py-3.5 text-slate-500">{formatDate(p.regDate)}</td>
+                    <td className="px-5 py-3.5 text-slate-500 hidden sm:table-cell">{formatDate(p.regDate)}</td>
                     <td className="px-5 py-3.5 text-right">
                       <button onClick={() => openEdit(p)} className="p-2 hover:bg-indigo-50 rounded-lg text-slate-400 hover:text-indigo-600 transition-colors">
                         <Edit2 size={16} />
@@ -330,7 +330,7 @@ export default function PatientsPage() {
           {importResult && (
             <div className={`p-4 rounded-xl text-sm ${importResult.errors ? "bg-amber-50 border border-amber-200" : "bg-emerald-50 border border-emerald-200"}`}>
               <p className="font-semibold text-slate-700">Import Complete</p>
-              <p className="text-slate-600 mt-1">Total rows: {importResult.total} | Created: {importResult.created} | Skipped: {importResult.skipped}</p>
+              <p className="text-slate-600 mt-1">Total rows: {importResult.total} | Created: {importResult.created} | Updated: {importResult.updated} | Skipped: {importResult.skipped}</p>
               {importResult.errors && importResult.errors.length > 0 && (
                 <div className="mt-2 max-h-32 overflow-y-auto">
                   {importResult.errors.slice(0, 10).map((e, i) => (
