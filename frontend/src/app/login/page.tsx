@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/stores/authStore";
-import { Eye, EyeOff, AlertCircle } from "lucide-react";
+import { Eye, EyeOff, AlertCircle, Download, X } from "lucide-react";
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
@@ -11,8 +11,45 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isIOS, setIsIOS] = useState(false);
+  const [isInstalled, setIsInstalled] = useState(false);
+  const [showInstallModal, setShowInstallModal] = useState(false);
   const { login } = useAuthStore();
   const router = useRouter();
+
+  useEffect(() => {
+    const ua = window.navigator.userAgent;
+    setIsIOS(/iPad|iPhone|iPod/.test(ua));
+
+    window.addEventListener("beforeinstallprompt", (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    });
+
+    window.addEventListener("appinstalled", () => {
+      setIsInstalled(true);
+      setDeferredPrompt(null);
+    });
+
+    if (window.matchMedia("(display-mode: standalone)").matches) {
+      setIsInstalled(true);
+    }
+  }, []);
+
+  const handleInstall = async () => {
+    if (isIOS) {
+      setShowInstallModal(true);
+      return;
+    }
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === "accepted") {
+      setIsInstalled(true);
+    }
+    setDeferredPrompt(null);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,7 +76,7 @@ export default function LoginPage() {
 
       <div className="w-full max-w-md relative z-10">
         <div className="text-center mb-10">
-          <div className="w-28 h-20 sm:w-36 sm:h-24 md:w-40 md:h-28 bg-white rounded-3xl flex items-center justify-center mx-auto mb-5 shadow-2xl shadow-indigo-500/30 p-3">
+          <div className="w-full max-w-md h-40 bg-white rounded-3xl flex items-center justify-center mx-auto mb-5 shadow-2xl shadow-indigo-500/30 p-4">
             <img src="/gcclogo.png" alt="Logo" className="w-full h-full object-contain" />
           </div>
           <h1 className="text-3xl font-bold text-white tracking-tight">FinTrackr</h1>
@@ -107,8 +144,55 @@ export default function LoginPage() {
               )}
             </button>
           </form>
+
+          {!isInstalled && (deferredPrompt || isIOS) && (
+            <button
+              onClick={handleInstall}
+              className="w-full mt-4 py-3 rounded-xl font-semibold border border-white/20 text-white hover:bg-white/10 transition-all flex items-center justify-center gap-2"
+            >
+              <Download size={18} />
+              Install App
+            </button>
+          )}
         </div>
+
+        <p className="text-center text-slate-500 text-xs mt-6">FinTrackr v1.0</p>
       </div>
+
+      {/* iOS Install Instructions Modal */}
+      {showInstallModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+          <div className="bg-slate-800 border border-white/10 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-white">Install FinTrackr</h3>
+              <button onClick={() => setShowInstallModal(false)} className="text-slate-400 hover:text-white">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="space-y-3 text-sm text-slate-300">
+              <p>To install this app on your iPhone:</p>
+              <ol className="list-decimal list-inside space-y-2">
+                <li>
+                  Tap the <strong className="text-white">Share</strong> button in Safari
+                </li>
+                <li>
+                  Scroll down and tap <strong className="text-white">Add to Home Screen</strong>
+                </li>
+                <li>
+                  Tap <strong className="text-white">Add</strong> to confirm
+                </li>
+              </ol>
+              <p className="text-slate-400 text-xs pt-2">The app will appear on your home screen.</p>
+            </div>
+            <button
+              onClick={() => setShowInstallModal(false)}
+              className="w-full mt-5 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-xl font-medium transition-colors"
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
