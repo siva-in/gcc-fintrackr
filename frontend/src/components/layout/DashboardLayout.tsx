@@ -18,6 +18,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [hydrateFromStorage]);
 
   useEffect(() => {
+    if (isLoading) return;
     if (!token) {
       router.push("/login");
       return;
@@ -25,7 +26,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (!user && token) {
       fetchMe();
     }
-  }, [token, user, fetchMe, router]);
+  }, [token, user, isLoading, fetchMe, router]);
 
   if (isLoading && token) {
     return (

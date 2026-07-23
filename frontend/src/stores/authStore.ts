@@ -49,7 +49,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   hydrateFromStorage: () => {
     const token = localStorage.getItem("token");
     const orgId = Number(localStorage.getItem("orgId")) || null;
-    set({ token, orgId });
+    set({ token, orgId, isLoading: false });
   },
 
   fetchMe: async () => {

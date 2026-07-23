@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/stores/authStore";
 
 export default function Home() {
-  const { token, hydrateFromStorage } = useAuthStore();
+  const { token, isLoading, hydrateFromStorage } = useAuthStore();
   const router = useRouter();
 
   useEffect(() => {
@@ -13,12 +13,13 @@ export default function Home() {
   }, [hydrateFromStorage]);
 
   useEffect(() => {
+    if (isLoading) return;
     if (token) {
       router.replace("/dashboard");
     } else {
       router.replace("/login");
     }
-  }, [token, router]);
+  }, [token, isLoading, router]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#f0f2f5]">

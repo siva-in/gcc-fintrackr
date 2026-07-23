@@ -11,8 +11,8 @@ const login = async (req, res) => {
   const { username, password } = req.body;
 
   try {
-    const user = await prisma.user.findUnique({
-      where: { username },
+    const user = await prisma.user.findFirst({
+      where: { username: { equals: username, mode: "insensitive" } },
       select: { id: true, username: true, password: true, userLevel: true, status: true },
     });
 

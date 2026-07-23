@@ -39,19 +39,14 @@ export default function Navbar({ onMenuClick }: NavbarProps) {
   const currentOrg = orgMemberships.find((m) => m.organization.id === orgId);
 
   return (
-    <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-slate-200/60 h-18 flex items-center px-4 lg:px-6">
+    <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-slate-200/60 h-14 sm:h-16 lg:h-18 flex items-center px-4 lg:px-6">
       <button onClick={onMenuClick} className="lg:hidden p-2 hover:bg-slate-100 rounded-xl mr-2 text-slate-500">
         <Menu size={20} />
       </button>
 
-      <img src="/gcclogo.png" alt="Logo" className="h-15 w-auto object-contain" />
+      <img src="/gcclogo.png" alt="Logo" className="h-14 sm:h-16 md:h-18 w-auto object-contain" />
 
       <div className="flex-1" />
-
-      {/* Level badge */}
-      <div className="mr-4 px-3 py-1 bg-slate-100 rounded-full text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-        {userLevel === "COMPANY" ? "Company Access" : "Org Access"}
-      </div>
 
       {/* Org switcher for ORG users */}
       {userLevel === "ORG" && orgMemberships.length > 1 && (

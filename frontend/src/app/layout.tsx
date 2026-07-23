@@ -18,7 +18,6 @@ export const metadata: Metadata = {
   manifest: "/manifest.json",
   icons: {
     icon: "/gcc-globe.png",
-    apple: "/gcc-globe.png",
   },
 };
 
@@ -37,7 +36,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <link rel="apple-touch-icon" sizes="180x180" href="/gcc-globe.png" />
         <link rel="apple-touch-icon" sizes="152x152" href="/gcc-globe.png" />
         <link rel="apple-touch-icon" sizes="128x128" href="/gcc-globe.png" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="FinTrackr" />
       </head>
