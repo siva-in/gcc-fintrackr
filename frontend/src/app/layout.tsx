@@ -34,8 +34,12 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full`}>
       <head>
         <link rel="apple-touch-icon" href="/gcc-globe.png" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/gcc-globe.png" />
+        <link rel="apple-touch-icon" sizes="152x152" href="/gcc-globe.png" />
+        <link rel="apple-touch-icon" sizes="128x128" href="/gcc-globe.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="FinTrackr" />
       </head>
       <body className="min-h-full">{children}</body>
     </html>
