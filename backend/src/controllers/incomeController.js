@@ -1,4 +1,5 @@
 const { prisma } = require("../middleware/auth");
+const { Prisma } = require("@prisma/client");
 const XLSX = require("xlsx");
 
 const DUMMY_VALUES = ["--none--", "undefined", "null", "n/a", "na", "-"];
@@ -68,6 +69,23 @@ const addDays = (dateStr, days) => {
 
 const toDateOnly = (dateStr) => dateStr ? new Date(`${dateStr}T00:00:00.000Z`) : null;
 
+const INCOME_TXN_FIELDS = new Set(Object.keys(Prisma.IncomeTxnScalarFieldEnum || {}));
+const HAS_PYMT_STATUS = INCOME_TXN_FIELDS.has("pymt_status");
+const HAS_LEGACY_STATUS = INCOME_TXN_FIELDS.has("status");
+const HAS_TXN_STATUS = INCOME_TXN_FIELDS.has("txn_status");
+
+const withIncomeTxnStatusData = (data, pymtStatus, txnStatus) => {
+  const next = { ...data };
+  if (pymtStatus != null) {
+    if (HAS_PYMT_STATUS) next.pymt_status = pymtStatus;
+    if (HAS_LEGACY_STATUS) next.status = pymtStatus;
+  }
+  if (txnStatus != null && HAS_TXN_STATUS) next.txn_status = txnStatus;
+  return next;
+};
+
+const startsWithPrefix = (value, prefix) => String(value || "").trim().toUpperCase().startsWith(prefix);
+
 const importOPBilling = async (req, res) => {
   if (!req.file) return res.status(400).json({ message: "No file uploaded" });
 
@@ -109,6 +127,11 @@ const importOPBilling = async (req, res) => {
       if (sNo === "" || terms.includes("total") || terms.includes("page total")) return false;
       return true;
     });
+
+    const firstBillNo = cleanValue(dataRows[0]?.[headerIdx["Bill No"]]);
+    if (!startsWithPrefix(firstBillNo, "OPB")) {
+      return res.status(400).json({ message: "File is not valid OPD file" });
+    }
 
     const opSource = await prisma.incomeSource.findFirst({ where: { code: "OP" } });
     if (!opSource) return res.status(500).json({ message: "OP income source not found in database" });
@@ -228,7 +251,7 @@ const importOPBilling = async (req, res) => {
           }
         }
 
-        const status = isReceived ? "FULLYPAID" : "UNPAID";
+        const pymtStatus = isReceived ? "FULLYPAID" : "UNPAID";
 
         const existing = await prisma.incomeTxn.findFirst({ where: { billNo } });
 
@@ -236,16 +259,28 @@ const importOPBilling = async (req, res) => {
         if (existing) {
           incomeTxn = await prisma.incomeTxn.update({
             where: { id: existing.id },
-            data: { patientId, billDate: toDateOnly(billDate), grossAmount: netAmount, netAmount, status },
+            data: withIncomeTxnStatusData({
+              patientId,
+              billDate: toDateOnly(billDate),
+              grossAmount: netAmount,
+              netAmount,
+            }, pymtStatus, "VERIFIED"),
           });
           await prisma.rcvdPymt.deleteMany({ where: { incomeTxnId: existing.id } });
           updated++;
         } else {
           incomeTxn = await prisma.incomeTxn.create({
-            data: {
-              incomeSourceId: opSource.id, patientId, billNo, billDate: toDateOnly(billDate), ipNo: null,
-              grossAmount: netAmount, discountAmount: 0, advAdjt: 0, netAmount, status,
-            },
+            data: withIncomeTxnStatusData({
+              incomeSourceId: opSource.id,
+              patientId,
+              billNo,
+              billDate: toDateOnly(billDate),
+              ipNo: null,
+              grossAmount: netAmount,
+              discountAmount: 0,
+              advAdjt: 0,
+              netAmount,
+            }, pymtStatus, "VERIFIED"),
           });
           inserted++;
         }
@@ -359,6 +394,11 @@ const importOPDetailReport = async (req, res) => {
       return true;
     });
 
+    const firstBillNo = cleanValue(dataRows[0]?.[headerIdx["Bill No"]]);
+    if (!startsWithPrefix(firstBillNo, "OPB")) {
+      return res.status(400).json({ message: "File is not valid OPD file" });
+    }
+
     const allDoctors = await prisma.doctor.findMany();
     const doctorByDesc = {};
     allDoctors.forEach((doc) => { doctorByDesc[doc.descName.toLowerCase()] = doc.id; });
@@ -394,6 +434,7 @@ const importOPDetailReport = async (req, res) => {
         const description = cleanValue(row[headerIdx["Description"]]);
         const amount = parseDecimal(row[headerIdx["Amount"]]);
         const billDate = parseDate(row[headerIdx["Bill Date"]]);
+        const uhid = cleanValue(row[headerIdx["UHID"]]);
 
         if (!amount || amount === 0) {
           failed++;
@@ -413,6 +454,32 @@ const importOPDetailReport = async (req, res) => {
           billDetailTotals[billNo] = { txnId: incomeTxn.id, netAmount: parseFloat(String(incomeTxn.netAmount)) || 0, total: 0 };
         }
         billDetailTotals[billNo].total += amount;
+
+        const detailData = {
+          incomeTxnId: incomeTxn.id,
+          uhid: uhid || null,
+          description: description || null,
+          amount,
+          billDate: toDateOnly(billDate),
+          createdBy: req.user?.username || null,
+        };
+
+        const updateResult = await prisma.incomeDtl.updateMany({
+          where: {
+            incomeTxnId: incomeTxn.id,
+            uhid: detailData.uhid,
+            description: detailData.description,
+            amount: detailData.amount,
+            billDate: detailData.billDate,
+          },
+          data: {
+            createdBy: detailData.createdBy,
+          },
+        });
+
+        if (updateResult.count === 0) {
+          await prisma.incomeDtl.create({ data: detailData });
+        }
 
         let partyId = null;
         if (description) {
@@ -472,7 +539,7 @@ const importOPDetailReport = async (req, res) => {
         const errorReason = `Amount discrepancy: Detail total (${info.total}) > Bill net amount (${info.netAmount})`;
         await prisma.incomeTxn.update({
           where: { id: info.txnId },
-          data: { status: "ERROR", errorReason },
+          data: withIncomeTxnStatusData({ errorReason }, undefined, "ERROR"),
         });
         failed++;
         errors.push({ rowNumber: 0, rowData: `Bill No: ${billNo}`, reason: errorReason });
@@ -617,7 +684,7 @@ const getDashboard = async (req, res) => {
 
 const getIncomeTxns = async (req, res) => {
   try {
-    const { page = 1, limit = 20, search = "", fromDate, toDate, paymentMode, doctorId, status } = req.query;
+    const { page = 1, limit = 20, search = "", fromDate, toDate, paymentMode, doctorId, pymtStatus, txnStatus, status } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     const opSource = await prisma.incomeSource.findFirst({ where: { code: "OP" } });
@@ -653,9 +720,27 @@ const getIncomeTxns = async (req, res) => {
       andConditions.push({ payables: { some: { partyId: parseInt(doctorId) } } });
     }
 
-    if (status) {
-      const statuses = status.split(",").map((s) => s.trim().toUpperCase());
-      andConditions.push({ status: { in: statuses } });
+    const paymentStatuses = ["FULLYPAID", "PARTIALPAID", "UNPAID"];
+    const transactionStatuses = ["VERIFIED", "UNVERIFIED", "ERROR"];
+    const statusTokens = (status || "").split(",").map((s) => s.trim().toUpperCase()).filter(Boolean);
+
+    if (pymtStatus) {
+      const pymtStatuses = pymtStatus.split(",").map((s) => s.trim().toUpperCase());
+      if (HAS_PYMT_STATUS) andConditions.push({ pymt_status: { in: pymtStatuses } });
+      else if (HAS_LEGACY_STATUS) andConditions.push({ status: { in: pymtStatuses } });
+    }
+    if (txnStatus) {
+      const txnStatuses = txnStatus.split(",").map((s) => s.trim().toUpperCase());
+      if (HAS_TXN_STATUS) andConditions.push({ txn_status: { in: txnStatuses } });
+    }
+    if (statusTokens.length > 0) {
+      const legacyPymtStatuses = statusTokens.filter((s) => paymentStatuses.includes(s));
+      const legacyTxnStatuses = statusTokens.filter((s) => transactionStatuses.includes(s));
+      if (legacyPymtStatuses.length > 0) {
+        if (HAS_PYMT_STATUS) andConditions.push({ pymt_status: { in: legacyPymtStatuses } });
+        else if (HAS_LEGACY_STATUS) andConditions.push({ status: { in: legacyPymtStatuses } });
+      }
+      if (legacyTxnStatuses.length > 0 && HAS_TXN_STATUS) andConditions.push({ txn_status: { in: legacyTxnStatuses } });
     }
 
     const where = { AND: andConditions };
@@ -826,14 +911,18 @@ const getIncomeTxnDetail = async (req, res) => {
 const updateIncomeTxnError = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, errorReason, grossAmount, discountAmount, advAdjt, netAmount } = req.body;
+    const { pymt_status, txn_status, errorReason, grossAmount, discountAmount, advAdjt, netAmount } = req.body;
 
     const txn = await prisma.incomeTxn.findUnique({ where: { id: parseInt(id) } });
     if (!txn) return res.status(404).json({ message: "Transaction not found" });
-    if (txn.status !== "ERROR") return res.status(400).json({ message: "Only ERROR records can be updated" });
+    if ((HAS_TXN_STATUS ? txn.txn_status : txn.status) !== "ERROR") return res.status(400).json({ message: "Only ERROR records can be updated" });
 
     const data = {};
-    if (status && ["FULLYPAID", "UNPAID"].includes(status)) data.status = status;
+    if (pymt_status && ["FULLYPAID", "PARTIALPAID", "UNPAID"].includes(pymt_status)) {
+      if (HAS_PYMT_STATUS) data.pymt_status = pymt_status;
+      if (HAS_LEGACY_STATUS) data.status = pymt_status;
+    }
+    if (txn_status && ["VERIFIED", "UNVERIFIED", "ERROR"].includes(txn_status) && HAS_TXN_STATUS) data.txn_status = txn_status;
     if (errorReason !== undefined) data.errorReason = errorReason || null;
     if (grossAmount !== undefined) data.grossAmount = parseFloat(grossAmount) || 0;
     if (discountAmount !== undefined) data.discountAmount = parseFloat(discountAmount) || 0;

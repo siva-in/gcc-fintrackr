@@ -13,6 +13,7 @@ const doctorRoutes = require("./routes/doctor");
 const patientRoutes = require("./routes/patient");
 const requestRoutes = require("./routes/requests");
 const incomeRoutes = require("./routes/income");
+const incomeIpRoutes = require("./routes/incomeIp");
 
 const app = express();
 
@@ -30,6 +31,7 @@ app.use("/api/doctors", doctorRoutes);
 app.use("/api/patients", patientRoutes);
 app.use("/api/requests", requestRoutes);
 app.use("/api/income", incomeRoutes);
+app.use("/api/income/ip", incomeIpRoutes);
 
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });

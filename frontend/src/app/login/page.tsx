@@ -4,6 +4,12 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/stores/authStore";
 import { Eye, EyeOff, AlertCircle, Download, X } from "lucide-react";
+import Image from "next/image";
+
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+}
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
@@ -11,7 +17,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isIOS, setIsIOS] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
   const [showInstallModal, setShowInstallModal] = useState(false);
@@ -22,19 +28,27 @@ export default function LoginPage() {
     const ua = window.navigator.userAgent;
     setIsIOS(/iPad|iPhone|iPod/.test(ua));
 
-    window.addEventListener("beforeinstallprompt", (e: any) => {
+    const handleBeforeInstallPrompt = (event: Event) => {
+      const e = event as BeforeInstallPromptEvent;
       e.preventDefault();
       setDeferredPrompt(e);
-    });
-
-    window.addEventListener("appinstalled", () => {
+    };
+    const handleAppInstalled = () => {
       setIsInstalled(true);
       setDeferredPrompt(null);
-    });
+    };
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    window.addEventListener("appinstalled", handleAppInstalled);
 
     if (window.matchMedia("(display-mode: standalone)").matches) {
       setIsInstalled(true);
     }
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", handleAppInstalled);
+    };
   }, []);
 
   const handleInstall = async () => {
@@ -76,8 +90,8 @@ export default function LoginPage() {
 
       <div className="w-full max-w-md relative z-10">
         <div className="text-center mb-10">
-          <div className="w-full max-w-md h-40 bg-white rounded-3xl flex items-center justify-center mx-auto mb-5 shadow-2xl shadow-indigo-500/30 p-4">
-            <img src="/gcclogo.png" alt="Logo" className="w-full h-full object-contain" />
+          <div className="w-full max-w-md h-40 bg-white rounded-3xl flex items-center justify-center mx-auto mb-5 shadow-2xl shadow-indigo-500/30 p-4 relative">
+            <Image src="/gcclogo.png" alt="Logo" fill className="object-contain p-4" sizes="(max-width: 768px) 100vw, 448px" priority />
           </div>
           <h1 className="text-3xl font-bold text-white tracking-tight">FinTrackr</h1>
           <p className="text-slate-400 mt-2">Sign in to your account</p>

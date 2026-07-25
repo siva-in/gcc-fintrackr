@@ -2,11 +2,11 @@ const express = require("express");
 const multer = require("multer");
 const router = express.Router();
 const { importOPBilling, importOPDetailReport, getImportLogs, getImportErrors, getDashboard, getIncomeTxns, getPayables, getDoctorPayableSummary, getIncomeTxnDetail, updateIncomeTxnError, getDoctorPayables, recordPayablePayment, getPaymentModes } = require("../controllers/incomeController");
-const { authenticate } = require("../middleware/auth");
+const { authenticate, requireCompanyRole } = require("../middleware/auth");
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-router.use(authenticate);
+router.use(authenticate, requireCompanyRole());
 
 router.get("/dashboard", getDashboard);
 router.get("/doctor-summary", getDoctorPayableSummary);

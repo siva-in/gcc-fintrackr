@@ -6,7 +6,7 @@ import api from "@/lib/api";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import toast from "react-hot-toast";
-import { Upload, Search, X, Banknote, CreditCard, Wallet, TrendingUp, List, LayoutDashboard, FileText, AlertTriangle, Clock, CheckCircle2, XCircle, Eye, ArrowLeft, Stethoscope, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, AlertCircle, CheckCircle } from "lucide-react";
+import { Upload, Search, X, Banknote, CreditCard, Wallet, TrendingUp, List, LayoutDashboard, FileText, AlertTriangle, Clock, CheckCircle2, XCircle, Eye, Stethoscope, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, AlertCircle, CheckCircle } from "lucide-react";
 
 interface Dashboard {
   cash: number;
@@ -21,7 +21,8 @@ interface IncomeTxn {
   billNo: string;
   billDate: string | null;
   netAmount: number | null;
-  status: string;
+  pymt_status: string;
+  txn_status: string;
   errorReason: string | null;
   grossAmount: number | null;
   discountAmount: number | null;
@@ -53,22 +54,47 @@ interface ImportErrorEntry {
   reason: string;
 }
 
-const getCurrentMonthRange = () => {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth();
-  const first = new Date(year, month, 1);
-  const last = new Date(year, month + 1, 0);
+const MONTHS = [
+  { value: "1", label: "January" },
+  { value: "2", label: "February" },
+  { value: "3", label: "March" },
+  { value: "4", label: "April" },
+  { value: "5", label: "May" },
+  { value: "6", label: "June" },
+  { value: "7", label: "July" },
+  { value: "8", label: "August" },
+  { value: "9", label: "September" },
+  { value: "10", label: "October" },
+  { value: "11", label: "November" },
+  { value: "12", label: "December" },
+];
+
+const getYearOptions = () => {
+  const currentYear = new Date().getFullYear();
+  const years: { value: string; label: string }[] = [];
+  for (let y = currentYear; y >= currentYear - 10; y--) {
+    years.push({ value: String(y), label: String(y) });
+  }
+  return years;
+};
+
+const getMonthRange = (year: number, month: number) => {
+  const first = new Date(year, month - 1, 1);
+  const last = new Date(year, month, 0);
   const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   return { from: fmt(first), to: fmt(last) };
 };
 
 export default function IncomeOPPage() {
-  const monthRange = getCurrentMonthRange();
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
   const [activeTab, setActiveTab] = useState<"dashboard" | "transactions" | "importlog">("dashboard");
   const [dashboard, setDashboard] = useState<Dashboard>({ cash: 0, bank: 0, credit: 0, total: 0, doctorFeeLiability: 0 });
-  const [dashFromDate, setDashFromDate] = useState(monthRange.from);
-  const [dashToDate, setDashToDate] = useState(monthRange.to);
+  const [dashYear, setDashYear] = useState(currentYear);
+  const [dashMonth, setDashMonth] = useState(currentMonth);
+  const [dashFromDate, setDashFromDate] = useState(() => getMonthRange(currentYear, currentMonth).from);
+  const [dashToDate, setDashToDate] = useState(() => getMonthRange(currentYear, currentMonth).to);
   const [dashLoading, setDashLoading] = useState(false);
 
   const [txns, setTxns] = useState<IncomeTxn[]>([]);
@@ -143,6 +169,12 @@ export default function IncomeOPPage() {
   const [settleRemarks, setSettleRemarks] = useState("");
   const [settleSaving, setSettleSaving] = useState(false);
   const [paymentModes, setPaymentModes] = useState<{ id: number; code: string; name: string }[]>([]);
+
+  useEffect(() => {
+    const range = getMonthRange(dashYear, dashMonth);
+    setDashFromDate(range.from);
+    setDashToDate(range.to);
+  }, [dashYear, dashMonth]);
 
   const fetchDoctorSummary = useCallback(async (fd = dashFromDate, td = dashToDate) => {
     setDoctorSummaryLoading(true);
@@ -267,14 +299,14 @@ export default function IncomeOPPage() {
     }
   }, [dashFromDate, dashToDate]);
 
-  useEffect(() => { fetchDashboard(); fetchDoctorSummary(); fetchDoctorsList(); }, [fetchDashboard, fetchDoctorSummary]);
-
-  const fetchDoctorsList = async () => {
+  async function fetchDoctorsList() {
     try {
       const { data } = await api.get("/doctors?limit=9999");
       setDoctorsList(data.doctors || []);
     } catch { /* ignore */ }
-  };
+  }
+
+  useEffect(() => { fetchDashboard(); fetchDoctorSummary(); fetchDoctorsList(); }, [fetchDashboard, fetchDoctorSummary]);
 
   const fetchTxns = async (p = page, s = search, fd = fromDate, td = toDate, pm = txnPaymentFilter, docId = txnDoctorFilter, st = txnStatusFilter) => {
     setLoading(true);
@@ -285,7 +317,7 @@ export default function IncomeOPPage() {
       if (td) params.set("toDate", td);
       if (pm) params.set("paymentMode", pm);
       if (docId) params.set("doctorId", docId);
-      if (st) params.set("status", st);
+      if (st) params.set("txnStatus", st);
       const { data } = await api.get(`/income/txns?${params.toString()}`);
       setTxns(data.txns);
       setPagination(data.pagination);
@@ -313,8 +345,6 @@ export default function IncomeOPPage() {
   useEffect(() => {
     if (activeTab === "importlog") fetchImportLogs();
   }, [activeTab, logPage]);
-
-  useEffect(() => { fetchDashboard(); fetchDoctorSummary(); fetchDoctorsList(); }, [fetchDashboard, fetchDoctorSummary]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -420,7 +450,7 @@ export default function IncomeOPPage() {
     try {
       const { data } = await api.get(`/income/txns/${txn.id}`);
       setEditingTxn(data);
-      setEditStatus("FULLYPAID");
+      setEditStatus(data.pymt_status || "FULLYPAID");
       setEditGross(data.grossAmount != null ? String(data.grossAmount) : "");
       setEditDiscount(data.discountAmount != null ? String(data.discountAmount) : "");
       setEditAdjt(data.advAdjt != null ? String(data.advAdjt) : "");
@@ -441,7 +471,8 @@ export default function IncomeOPPage() {
     setEditSaving(true);
     try {
       await api.patch(`/income/txns/${editingTxn.id}/error`, {
-        status: editStatus,
+        pymt_status: editStatus,
+        txn_status: "VERIFIED",
         errorReason: editRemarks,
         grossAmount: editGross || "0",
         discountAmount: editDiscount || "0",
@@ -514,6 +545,30 @@ export default function IncomeOPPage() {
             <>
               <div className="bg-white rounded-2xl border border-slate-200/60 p-4 mb-6">
                 <div className="flex flex-col sm:flex-row gap-3 items-end">
+                  <div className="w-full sm:w-auto">
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Year</label>
+                    <select
+                      value={dashYear}
+                      onChange={(e) => setDashYear(parseInt(e.target.value))}
+                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                    >
+                      {getYearOptions().map((y) => (
+                        <option key={y.value} value={y.value}>{y.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="w-full sm:w-auto">
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Month</label>
+                    <select
+                      value={dashMonth}
+                      onChange={(e) => setDashMonth(parseInt(e.target.value))}
+                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                    >
+                      {MONTHS.map((m) => (
+                        <option key={m.value} value={m.value}>{m.label}</option>
+                      ))}
+                    </select>
+                  </div>
                   <div className="w-full sm:w-auto">
                     <label className="block text-xs font-medium text-slate-500 mb-1">From Date</label>
                     <input
@@ -758,16 +813,15 @@ export default function IncomeOPPage() {
                     </select>
                   </div>
                   <div className="w-full sm:w-auto">
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Status</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Txn Status</label>
                     <select
                       value={txnStatusFilter}
                       onChange={(e) => setTxnStatusFilter(e.target.value)}
                       className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
                     >
-                      <option value="">All Status</option>
-                      <option value="FULLYPAID">Fully Paid</option>
-                      <option value="PARTIALPAID">Partial Paid</option>
-                      <option value="UNPAID">Unpaid</option>
+                      <option value="">All Txn Status</option>
+                      <option value="VERIFIED">Verified</option>
+                      <option value="UNVERIFIED">Unverified</option>
                       <option value="ERROR">Error</option>
                     </select>
                   </div>
@@ -826,7 +880,7 @@ export default function IncomeOPPage() {
                         <tr><td colSpan={8} className="text-center py-12 text-slate-400">No transactions found</td></tr>
                       ) : (
                         txns.map((txn) => (
-                          <tr key={txn.id} className={`hover:bg-slate-50/80 ${txn.status === "ERROR" ? "bg-red-50/50" : ""}`}>
+                          <tr key={txn.id} className={`hover:bg-slate-50/80 ${txn.txn_status === "ERROR" ? "bg-red-50/50" : ""}`}>
                             <td className="px-5 py-3.5 font-medium text-slate-700">{txn.billNo}</td>
                             <td className="px-5 py-3.5 text-slate-500 hidden sm:table-cell">{formatDate(txn.billDate)}</td>
                             <td className="px-5 py-3.5 text-slate-700">{txn.patient?.patientName || "-"}</td>
@@ -845,16 +899,16 @@ export default function IncomeOPPage() {
                             </td>
                             <td className="px-5 py-3.5">
                               <div className="flex flex-col gap-1">
-                                <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium ${txn.status === "FULLYPAID" ? "bg-emerald-50 text-emerald-600" : txn.status === "PARTIALPAID" ? "bg-amber-50 text-amber-600" : txn.status === "ERROR" ? "bg-red-50 text-red-600" : "bg-red-50 text-red-500"}`}>
-                                  {txn.status}
+                                <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium ${txn.txn_status === "VERIFIED" ? "bg-emerald-50 text-emerald-600" : txn.txn_status === "UNVERIFIED" ? "bg-amber-50 text-amber-600" : "bg-red-50 text-red-600"}`}>
+                                  {txn.txn_status}
                                 </span>
-                                {txn.status === "ERROR" && txn.errorReason && (
+                                {txn.txn_status === "ERROR" && txn.errorReason && (
                                   <span className="text-[10px] text-red-500 max-w-[150px] truncate" title={txn.errorReason}>{txn.errorReason}</span>
                                 )}
                               </div>
                             </td>
                             <td className="px-5 py-3.5 text-center">
-                              {txn.status === "ERROR" ? (
+                              {txn.txn_status === "ERROR" ? (
                                 <button
                                   onClick={() => openEditModal(txn)}
                                   className="inline-flex items-center gap-1 px-3 py-1.5 bg-amber-50 text-amber-600 rounded-lg text-xs font-medium hover:bg-amber-100 transition-colors"

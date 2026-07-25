@@ -20,7 +20,17 @@ const PAYMENT_MODES = [
   { code: "UPI", name: "UPI" },
   { code: "CARD", name: "Card" },
   { code: "CHEQUE", name: "Cheque" },
-  { code: "CREDIT", name: "CREDIT" },
+  { code: "CREDIT", name: "Credit" },
+  { code: "INSURANCE", name: "Insurance" },
+];
+
+const INSURANCE_BIZ_PARTNERS = [
+  "Niva Bupa Health",
+  "Aditya Birla Health",
+  "Bajaj Allianz",
+  "National Insurance",
+  "CMScheme",
+  "PMScheme",
 ];
 
 async function seedIncomeSources(runner) {
@@ -37,6 +47,23 @@ async function seedPaymentModes(runner) {
     const existing = await runner.paymentMode.findFirst({ where: { code } });
     if (!existing) {
       await runner.paymentMode.create({ data: { code, name } });
+    }
+  }
+}
+
+async function seedInsuranceBizPartners(runner) {
+  for (const bpName of INSURANCE_BIZ_PARTNERS) {
+    const existing = await runner.bizPartner.findFirst({
+      where: { bpType: "INSURANCE", bpName },
+    });
+    if (!existing) {
+      await runner.bizPartner.create({
+        data: {
+          bpType: "INSURANCE",
+          bpName,
+          isActive: true,
+        },
+      });
     }
   }
 }
@@ -105,6 +132,7 @@ async function main() {
   await createOrgRoles(prisma);
   await seedIncomeSources(prisma);
   await seedPaymentModes(prisma);
+  await seedInsuranceBizPartners(prisma);
 }
 
 main()

@@ -5,11 +5,12 @@ import { usePathname } from "next/navigation";
 import { useAuthStore } from "@/stores/authStore";
 import { useState } from "react";
 import { LayoutDashboard, Users, Building2, FileText, CheckCircle, Shield, Settings, Stethoscope, UserRound, X, ChevronLeft, ChevronDown, Wallet } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 interface NavItem {
   href: string;
   label: string;
-  icon: any;
+  icon: LucideIcon;
   children?: { href: string; label: string }[];
 }
 
