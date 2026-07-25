@@ -3,9 +3,17 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuthStore } from "@/stores/authStore";
-import { LayoutDashboard, Users, Building2, FileText, CheckCircle, Shield, Settings, Stethoscope, UserRound, X, ChevronLeft } from "lucide-react";
+import { useState } from "react";
+import { LayoutDashboard, Users, Building2, FileText, CheckCircle, Shield, Settings, Stethoscope, UserRound, X, ChevronLeft, ChevronDown, Wallet } from "lucide-react";
 
-const companyNavItems = [
+interface NavItem {
+  href: string;
+  label: string;
+  icon: any;
+  children?: { href: string; label: string }[];
+}
+
+const companyNavItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/users", label: "Users", icon: Users },
   { href: "/organizations", label: "Organizations", icon: Building2 },
@@ -13,9 +21,21 @@ const companyNavItems = [
   { href: "/role-master", label: "Role Master", icon: Settings },
   { href: "/doctors", label: "Doctors", icon: Stethoscope },
   { href: "/patients", label: "Patients", icon: UserRound },
+  {
+    href: "/income",
+    label: "Income",
+    icon: Wallet,
+    children: [
+      { href: "/income/op", label: "OP" },
+      { href: "/income/ip", label: "IP" },
+      { href: "/income/lab", label: "LAB" },
+      { href: "/income/advance", label: "Advance" },
+      { href: "/income/pharma", label: "Pharma" },
+    ],
+  },
 ];
 
-const orgNavItems = [
+const orgNavItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/requests", label: "Requests", icon: FileText },
   { href: "/approvals", label: "Approvals", icon: CheckCircle },
@@ -31,8 +51,13 @@ interface SidebarProps {
 export default function Sidebar({ isOpen, collapsed, onClose, onToggleCollapse }: SidebarProps) {
   const pathname = usePathname();
   const { userLevel, orgRole } = useAuthStore();
+  const [openMenus, setOpenMenus] = useState<string[]>([]);
 
   const navItems = userLevel === "COMPANY" ? companyNavItems : orgNavItems;
+
+  const toggleMenu = (href: string) => {
+    setOpenMenus((prev) => (prev.includes(href) ? prev.filter((h) => h !== href) : [...prev, href]));
+  };
 
   return (
     <>
@@ -77,6 +102,49 @@ export default function Sidebar({ isOpen, collapsed, onClose, onToggleCollapse }
               const Icon = item.icon;
 
               if (item.href === "/approvals" && orgRole !== "LEADER") return null;
+
+              if (item.children) {
+                const isMenuOpen = openMenus.includes(item.href) || item.children.some((c) => pathname?.startsWith(c.href));
+                return (
+                  <div key={item.href}>
+                    <button
+                      onClick={() => toggleMenu(item.href)}
+                      title={collapsed ? item.label : undefined}
+                      className={`w-full flex items-center rounded-xl text-sm font-medium transition-all duration-150
+                        ${collapsed ? "justify-center px-0 py-2.5 mx-1" : "gap-3 px-3 py-2.5"}
+                        ${isActive ? "bg-indigo-500/15 text-indigo-300 shadow-sm" : "text-slate-400 hover:bg-white/5 hover:text-white"}
+                      `}
+                    >
+                      <Icon size={20} className={isActive ? "text-indigo-400" : ""} strokeWidth={isActive ? 2.2 : 1.8} />
+                      {!collapsed && (
+                        <>
+                          <span className="flex-1 text-left">{item.label}</span>
+                          <ChevronDown size={16} className={`transition-transform duration-200 ${isMenuOpen ? "rotate-180" : ""}`} />
+                        </>
+                      )}
+                    </button>
+                    {isMenuOpen && !collapsed && (
+                      <div className="ml-4 mt-1 space-y-0.5 border-l border-white/10 pl-3">
+                        {item.children.map((child) => {
+                          const childActive = pathname === child.href;
+                          return (
+                            <Link
+                              key={child.href}
+                              href={child.href}
+                              onClick={onClose}
+                              className={`block px-3 py-2 rounded-lg text-sm transition-all duration-150
+                                ${childActive ? "bg-indigo-500/15 text-indigo-300" : "text-slate-400 hover:bg-white/5 hover:text-white"}
+                              `}
+                            >
+                              {child.label}
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
 
               return (
                 <Link

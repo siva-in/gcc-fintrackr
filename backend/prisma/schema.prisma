@@ -84,7 +84,7 @@ model UserRole {
 
 model Patient {
   id          Int       @id @default(autoincrement())
-  regDate     DateTime?
+  regDate     DateTime?  @db.Date
   uhidNo      String?
   patientName String
   address1    String?
@@ -93,6 +93,8 @@ model Patient {
   mobileNo    String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+
+  incomeTxns IncomeTxn[]
 
   @@unique([uhidNo], map: "Patient_uhidNo_key")
 }
@@ -105,6 +107,8 @@ model Doctor {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  payables  Payable[]
 }
 
 model Organization {
@@ -156,4 +160,165 @@ model Approval {
 
   @@unique([requestId, approverId])
   @@index([approverId])
+}
+
+enum IncomeStatus {
+  FULLYPAID
+  PARTIALPAID
+  UNPAID
+  ERROR
+}
+
+enum PayableType {
+  DOCTOR
+}
+
+enum PayableStatus {
+  PENDING
+  PARTIALLY_PAID
+  PAID
+  CANCELLED
+}
+
+model IncomeSource {
+  id       Int     @id @default(autoincrement())
+  code     String  @unique @db.VarChar(20)
+  name     String  @db.VarChar(100)
+  isActive Boolean @default(true)
+
+  incomeTxns IncomeTxn[]
+
+  @@map("income_src")
+}
+
+model PaymentMode {
+  id   Int    @id @default(autoincrement())
+  code String @unique @db.VarChar(20)
+  name String @db.VarChar(50)
+
+  rcvdPymts    RcvdPymt[]
+  payablePymts PayablePymt[]
+
+  @@map("payment_mode")
+}
+
+model IncomeTxn {
+  id             Int          @id @default(autoincrement())
+  incomeSourceId Int
+  patientId      Int?
+  billNo         String       @unique @db.VarChar(50)
+  billDate       DateTime?    @db.Date
+  ipNo           String?      @db.VarChar(50)
+  grossAmount    Decimal?     @db.Decimal(12, 2)
+  discountAmount Decimal?     @db.Decimal(12, 2)
+  advAdjt        Decimal?     @db.Decimal(12, 2)
+  netAmount      Decimal?     @db.Decimal(12, 2)
+  status         IncomeStatus
+  errorReason    String?      @db.Text
+  createdAt      DateTime     @default(now())
+
+  incomeSource IncomeSource @relation(fields: [incomeSourceId], references: [id])
+  patient      Patient?     @relation(fields: [patientId], references: [id])
+  rcvdPymts    RcvdPymt[]
+  payables     Payable[]
+
+  @@index([incomeSourceId])
+  @@index([patientId])
+  @@index([billNo])
+  @@map("income_txn")
+}
+
+model RcvdPymt {
+  id            Int       @id @default(autoincrement())
+  incomeTxnId   Int
+  paymentModeId Int?
+  amount        Decimal?  @db.Decimal(12, 2)
+  paymentDate   DateTime? @db.Date
+  transactionNo String?   @db.VarChar(100)
+  bankName      String?   @db.VarChar(100)
+  paidBy        String?   @db.VarChar(100)
+  remarks       String?
+
+  incomeTxn   IncomeTxn   @relation(fields: [incomeTxnId], references: [id], onDelete: Cascade)
+  paymentMode PaymentMode? @relation(fields: [paymentModeId], references: [id])
+
+  @@index([incomeTxnId])
+  @@index([paymentModeId])
+  @@map("rcvd_pymts")
+}
+
+model ImportLog {
+  id            Int      @id @default(autoincrement())
+  fileName      String   @db.VarChar(255)
+  fileType      String   @db.VarChar(50)
+  totalRecords  Int      @default(0)
+  inserted      Int      @default(0)
+  updated       Int      @default(0)
+  skipped       Int      @default(0)
+  failed        Int      @default(0)
+  importStarted DateTime @default(now())
+  importEnded   DateTime?
+  createdBy     Int?
+
+  errors ImportError[]
+
+  @@index([createdBy])
+  @@map("import_log")
+}
+
+model ImportError {
+  id          Int      @id @default(autoincrement())
+  importLogId Int
+  rowNumber   Int
+  rowData     String   @db.Text
+  reason      String   @db.Text
+
+  importLog ImportLog @relation(fields: [importLogId], references: [id], onDelete: Cascade)
+
+  @@index([importLogId])
+  @@map("import_error")
+}
+
+model Payable {
+  id           Int             @id @default(autoincrement())
+  payableType  PayableType
+  partyId      Int
+  incomeTxnId  Int
+  billDate     DateTime        @db.Date
+  dueDate      DateTime?       @db.Date
+  billedAmt    Decimal         @db.Decimal(12, 2)
+  payableAmt   Decimal?        @db.Decimal(12, 2)
+  balanceAmt   Decimal         @db.Decimal(12, 2)
+  status       PayableStatus   @default(PENDING)
+  remarks      String?         @db.Text
+  createdBy    String?         @db.VarChar(100)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  incomeTxn  IncomeTxn   @relation(fields: [incomeTxnId], references: [id], onDelete: Cascade)
+  doctor     Doctor?     @relation(fields: [partyId], references: [id])
+  pymts      PayablePymt[]
+
+  @@index([incomeTxnId])
+  @@index([partyId])
+  @@map("payable")
+}
+
+model PayablePymt {
+  id            Int         @id @default(autoincrement())
+  payableId     Int
+  paymentModeId Int?
+  amount        Decimal?    @db.Decimal(12, 2)
+  paymentDate   DateTime?
+  transactionNo String?     @db.VarChar(100)
+  bankName      String?     @db.VarChar(100)
+  paidBy        String?     @db.VarChar(100)
+  remarks       String?
+
+  payable     Payable      @relation(fields: [payableId], references: [id], onDelete: Cascade)
+  paymentMode PaymentMode? @relation(fields: [paymentModeId], references: [id])
+
+  @@index([payableId])
+  @@index([paymentModeId])
+  @@map("payable_pymts")
 }

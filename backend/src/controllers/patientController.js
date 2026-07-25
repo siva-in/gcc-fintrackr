@@ -7,11 +7,10 @@ const DUMMY_VALUES = ["--none--", "undefined", "null", "n/a", "na", "-"];
 
 const parseDate = (val) => {
   if (!val) return null;
-  if (val instanceof Date) return val;
 
   // Handle Excel serial date numbers
   if (typeof val === "number") {
-    const d = new Date((val - 25569) * 86400 * 1000);
+    const d = new Date(Date.UTC(1899, 11, 30) + val * 86400000);
     return isNaN(d.getTime()) ? null : d;
   }
 
@@ -21,8 +20,12 @@ const parseDate = (val) => {
   const dmyMatch = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
   if (dmyMatch) {
     const [, day, month, year] = dmyMatch;
-    const d = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-    return isNaN(d.getTime()) ? null : d;
+    return new Date(Date.UTC(parseInt(year), parseInt(month) - 1, parseInt(day)));
+  }
+
+  // Handle YYYY-MM-DD or other parseable strings
+  if (s.match(/^\d{4}-\d{2}-\d{2}$/)) {
+    return new Date(`${s}T00:00:00.000Z`);
   }
 
   const d = new Date(s);
@@ -37,19 +40,23 @@ const parseIntSafe = (val) => {
 
 const getPatients = async (req, res) => {
   try {
-    const { page = 1, limit = 20, search = "" } = req.query;
+    const { page = 1, limit = 20, search = "", fromDate, toDate } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    const where = search
-      ? {
-          OR: [
-            { patientName: { contains: search, mode: "insensitive" } },
-            { uhidNo: { contains: search, mode: "insensitive" } },
-            { mobileNo: { contains: search, mode: "insensitive" } },
-            { bloodGroup: { contains: search, mode: "insensitive" } },
-          ],
-        }
-      : {};
+    const where = {};
+    if (search) {
+      where.OR = [
+        { patientName: { contains: search, mode: "insensitive" } },
+        { uhidNo: { contains: search, mode: "insensitive" } },
+        { mobileNo: { contains: search, mode: "insensitive" } },
+        { bloodGroup: { contains: search, mode: "insensitive" } },
+      ];
+    }
+    if (fromDate || toDate) {
+      where.regDate = {};
+      if (fromDate) where.regDate.gte = new Date(`${fromDate}T00:00:00.000Z`);
+      if (toDate) where.regDate.lte = new Date(`${toDate}T23:59:59.999Z`);
+    }
 
     const [patients, total] = await Promise.all([
       prisma.patient.findMany({

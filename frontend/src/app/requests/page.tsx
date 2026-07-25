@@ -11,6 +11,7 @@ import Modal from "@/components/ui/Modal";
 import Badge from "@/components/ui/Badge";
 import toast from "react-hot-toast";
 import { Plus, Eye } from "lucide-react";
+import Pagination from "@/components/ui/Pagination";
 
 export default function RequestsPage() {
   const { orgRole, orgId } = useAuthStore();
@@ -150,20 +151,7 @@ export default function RequestsPage() {
           </table>
         </div>
 
-        {pagination.pages > 1 && (
-          <div className="flex items-center justify-between px-5 py-3.5 border-t border-slate-200/60 bg-slate-50/50">
-            <p className="text-sm text-slate-400">
-              Showing {(pagination.page - 1) * 10 + 1} to {Math.min(pagination.page * 10, pagination.total)} of {pagination.total}
-            </p>
-            <div className="flex gap-1">
-              {Array.from({ length: pagination.pages }, (_, i) => i + 1).map((p) => (
-                <button key={p} onClick={() => setPage(p)} className={`px-3.5 py-1.5 text-sm rounded-lg font-medium transition-all ${p === page ? "bg-indigo-500 text-white shadow-md shadow-indigo-500/25" : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-                  {p}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        <Pagination page={pagination.page} totalPages={pagination.pages} total={pagination.total} limit={10} onPageChange={setPage} />
       </div>
 
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="New Request">

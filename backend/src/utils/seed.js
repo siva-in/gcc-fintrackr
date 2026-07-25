@@ -6,6 +6,41 @@ const prisma = new PrismaClient();
 const COMPANY_ROLES = ["ADMIN", "VIEWER", "EDITOR", "APPROVER"];
 const ORG_ROLES = ["MANAGER", "ACCOUNTANT", "LEADER", "HR", "USER"];
 
+const INCOME_SOURCES = [
+  { code: "IP", name: "In Patient" },
+  { code: "OP", name: "Out Patient" },
+  { code: "LAB", name: "Laboratory" },
+  { code: "PHARMACY", name: "Pharmacy" },
+  { code: "MISC", name: "Miscellaneous" },
+];
+
+const PAYMENT_MODES = [
+  { code: "CASH", name: "Cash" },
+  { code: "BANK", name: "Bank Transfer" },
+  { code: "UPI", name: "UPI" },
+  { code: "CARD", name: "Card" },
+  { code: "CHEQUE", name: "Cheque" },
+  { code: "CREDIT", name: "CREDIT" },
+];
+
+async function seedIncomeSources(runner) {
+  for (const { code, name } of INCOME_SOURCES) {
+    const existing = await runner.incomeSource.findFirst({ where: { code } });
+    if (!existing) {
+      await runner.incomeSource.create({ data: { code, name } });
+    }
+  }
+}
+
+async function seedPaymentModes(runner) {
+  for (const { code, name } of PAYMENT_MODES) {
+    const existing = await runner.paymentMode.findFirst({ where: { code } });
+    if (!existing) {
+      await runner.paymentMode.create({ data: { code, name } });
+    }
+  }
+}
+
 async function createCompanyRoles(runner) {
   for (const name of COMPANY_ROLES) {
     const existing = await runner.role.findFirst({ where: { name, type: "COMPANY", orgId: null } });
@@ -28,20 +63,21 @@ async function createOrgRoles(runner) {
 }
 
 async function main() {
+  name = "siva";
   const existingAdmin = await prisma.user.findUnique({
-    where: { username: "admin" },
+    where: { username: name },
   });
 
   if (!existingAdmin) {
-    const hashedPassword = await bcrypt.hash("1", 12);
+    const hashedPassword = await bcrypt.hash("s", 12);
 
     const admin = await prisma.user.create({
       data: {
-        username: "admin",
+        username: name,
         password: hashedPassword,
-        firstName: "System",
-        lastName: "Administrator",
-        mobile: "1234567890",
+        firstName: "Siva",
+        lastName: "R",
+        mobile: "8807733633",
         status: "ACTIVE",
         userLevel: "COMPANY",
       },
@@ -67,6 +103,8 @@ async function main() {
   }
 
   await createOrgRoles(prisma);
+  await seedIncomeSources(prisma);
+  await seedPaymentModes(prisma);
 }
 
 main()
