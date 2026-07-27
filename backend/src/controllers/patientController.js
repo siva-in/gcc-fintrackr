@@ -1,6 +1,6 @@
 const { body, validationResult } = require("express-validator");
 const { prisma } = require("../middleware/auth");
-const XLSX = require("xlsx");
+const { readFirstSheetRowsFromBuffer } = require("../utils/excel");
 
 const EXPECTED_HEADERS = ["Reg.Date", "UHID No", "Patient Name", "Address1", "Age", "Blood Group", "Mobile NO"];
 const DUMMY_VALUES = ["--none--", "undefined", "null", "n/a", "na", "-"];
@@ -158,9 +158,7 @@ const importPatients = async (req, res) => {
   if (!req.file) return res.status(400).json({ message: "No file uploaded" });
 
   try {
-    const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+    const rows = await readFirstSheetRowsFromBuffer(req.file.buffer);
 
     if (rows.length < 2) return res.status(400).json({ message: "Excel file is empty or has no data rows" });
 

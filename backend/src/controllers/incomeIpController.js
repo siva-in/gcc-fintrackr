@@ -1,6 +1,6 @@
 const { prisma } = require("../middleware/auth");
 const { Prisma } = require("@prisma/client");
-const XLSX = require("xlsx");
+const { readFirstSheetRowsFromBuffer } = require("../utils/excel");
 
 const DUMMY_VALUES = ["--none--", "undefined", "null", "n/a", "na", "-"];
 
@@ -127,9 +127,7 @@ const importIPBilling = async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: "No file uploaded" });
 
-    const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+    const rows = await readFirstSheetRowsFromBuffer(req.file.buffer, { defval: "" });
 
     const headerRowIndex = findHeaderRow(rows, ["bill no", "patient name"]);
     if (headerRowIndex < 0) return res.status(400).json({ message: "Could not find header row with Bill No and Patient Name" });
@@ -247,6 +245,20 @@ const importIPBilling = async (req, res) => {
             },
           });
         }
+
+        if (ipNo) {
+          const ipAdm = await prisma.iPAdm.upsert({
+            where: { ipNumber: ipNo },
+            update: {},
+            create: { ipNumber: ipNo },
+          });
+
+          await prisma.iPDtl.upsert({
+            where: { incomeTxnId: incomeTxn.id },
+            update: { ipAdmId: ipAdm.id },
+            create: { ipAdmId: ipAdm.id, incomeTxnId: incomeTxn.id },
+          });
+        }
       } catch (err) {
         failed++;
         errors.push({ rowNumber: headerRowIndex + 2 + i, rowData: getRowValuesAsText(row, IP_BILLING_HEADERS, headerIdx), reason: err.message || "Processing error" });
@@ -278,9 +290,7 @@ const importIPDetailReport = async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: "No file uploaded" });
 
-    const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+    const rows = await readFirstSheetRowsFromBuffer(req.file.buffer, { defval: "" });
 
     const headerRowIndex = findHeaderRow(rows, ["bill no", "description"]);
     if (headerRowIndex < 0) return res.status(400).json({ message: "Could not find header row with Bill No and Description" });
@@ -357,6 +367,14 @@ const importIPDetailReport = async (req, res) => {
               patientId: patient.id,
             }, undefined, nextTxnStatus),
           });
+        }
+
+        // Keep IP Admission's patient in sync once known
+        if (patient) {
+          const ipDtl = await prisma.iPDtl.findUnique({ where: { incomeTxnId: incomeTxn.id } });
+          if (ipDtl) {
+            await prisma.iPAdm.update({ where: { id: ipDtl.ipAdmId }, data: { patientId: patient.id } });
+          }
         }
       }
 

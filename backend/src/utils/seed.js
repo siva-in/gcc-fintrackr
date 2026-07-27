@@ -90,13 +90,13 @@ async function createOrgRoles(runner) {
 }
 
 async function main() {
-  name = "siva";
+  name = "admin";
   const existingAdmin = await prisma.user.findUnique({
     where: { username: name },
   });
 
   if (!existingAdmin) {
-    const hashedPassword = await bcrypt.hash("s", 12);
+    const hashedPassword = await bcrypt.hash("a", 12);
 
     const admin = await prisma.user.create({
       data: {

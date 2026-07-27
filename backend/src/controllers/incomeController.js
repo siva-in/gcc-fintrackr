@@ -1,6 +1,6 @@
 const { prisma } = require("../middleware/auth");
 const { Prisma } = require("@prisma/client");
-const XLSX = require("xlsx");
+const { readFirstSheetRowsFromBuffer } = require("../utils/excel");
 
 const DUMMY_VALUES = ["--none--", "undefined", "null", "n/a", "na", "-"];
 
@@ -93,9 +93,7 @@ const importOPBilling = async (req, res) => {
   let importLogId = null;
 
   try {
-    const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+    const rows = await readFirstSheetRowsFromBuffer(req.file.buffer);
 
     if (rows.length < 2) return res.status(400).json({ message: "Excel file is empty or has no data rows" });
 
@@ -359,9 +357,7 @@ const importOPDetailReport = async (req, res) => {
   let importLogId = null;
 
   try {
-    const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+    const rows = await readFirstSheetRowsFromBuffer(req.file.buffer);
 
     if (rows.length < 2) return res.status(400).json({ message: "Excel file is empty or has no data rows" });
 

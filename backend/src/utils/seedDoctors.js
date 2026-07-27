@@ -1,15 +1,14 @@
 const { PrismaClient } = require("@prisma/client");
-const XLSX = require("xlsx");
 const path = require("path");
+const { readFirstSheetRowsFromFile, rowsToObjects } = require("./excel");
 
 const prisma = new PrismaClient();
 
 async function main() {
   const filePath = path.join(__dirname, "../../prisma/doctors.xlsx");
 
-  const workbook = XLSX.readFile(filePath);
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json(sheet);
+  const rawRows = await readFirstSheetRowsFromFile(filePath);
+  const rows = rowsToObjects(rawRows);
 
   if (rows.length === 0) {
     console.log("No rows found in doctors.xlsx");
