@@ -27,7 +27,7 @@ interface IncomeTxn {
   grossAmount: number | null;
   discountAmount: number | null;
   advAdjt: number | null;
-  patient: { id: number; patientName: string; uhidNo: string | null } | null;
+  patient: { id: number; name: string; uhid: string | null } | null;
   rcvdPymts: { id: number; amount: number | null; paymentMode: { code: string; name: string } | null }[];
   payables: { id: number; billedAmt: number; balanceAmt: number; status: string; remarks: string | null; doctor: { id: number; name: string } | null }[];
   incomeSource: { code: string; name: string } | null;
@@ -139,7 +139,7 @@ export default function IncomeLabPage() {
 
   const [settleModalOpen, setSettleModalOpen] = useState(false);
   const [settleDoctor, setSettleDoctor] = useState<{ id: number; name: string } | null>(null);
-  const [settlePayables, setSettlePayables] = useState<{ id: number; billNo: string; billedAmt: number; balanceAmt: number; status: string; paidTotal: number; remarks: string | null; incomeTxn: { billNo: string; patient: { patientName: string } | null } | null; pymts: { id: number; amount: number | null; paymentMode: { code: string; name: string } | null; paymentDate: string | null; paidBy: string | null }[] }[]>([]);
+  const [settlePayables, setSettlePayables] = useState<{ id: number; billNo: string; billedAmt: number; balanceAmt: number; status: string; paidTotal: number; remarks: string | null; incomeTxn: { billNo: string; patient: { name: string } | null } | null; pymts: { id: number; amount: number | null; paymentMode: { code: string; name: string } | null; paymentDate: string | null; paidBy: string | null }[] }[]>([]);
   const [settleGrandTotal, setSettleGrandTotal] = useState(0);
   const [settleLoading, setSettleLoading] = useState(false);
   const [settleSelected, setSettleSelected] = useState<Set<number>>(new Set());
@@ -853,8 +853,8 @@ export default function IncomeLabPage() {
                           <tr key={txn.id} className={`hover:bg-slate-50/80 ${txn.txn_status === "ERROR" ? "bg-red-50/50" : ""}`}>
                             <td className="px-5 py-3.5 font-medium text-slate-700">{txn.billNo}</td>
                             <td className="px-5 py-3.5 text-slate-500 hidden sm:table-cell">{formatDate(txn.billDate)}</td>
-                            <td className="px-5 py-3.5 text-slate-700">{txn.patient?.patientName || "-"}</td>
-                            <td className="px-5 py-3.5 text-slate-500 hidden md:table-cell">{txn.patient?.uhidNo || "-"}</td>
+                            <td className="px-5 py-3.5 text-slate-700">{txn.patient?.name || "-"}</td>
+                            <td className="px-5 py-3.5 text-slate-500 hidden md:table-cell">{txn.patient?.uhid || "-"}</td>
                             <td className="px-5 py-3.5 text-right font-medium text-slate-700">{txn.netAmount ? formatCurrency(Number(txn.netAmount)) : "-"}</td>
                             <td className="px-5 py-3.5">
                               <div className="flex flex-wrap gap-1">
@@ -1103,7 +1103,7 @@ export default function IncomeLabPage() {
             </>
           )}
 
-          <Modal isOpen={importModalOpen} onClose={() => setImportModalOpen(false)} title="Import LAB Billing Report">
+          <Modal isOpen={importModalOpen} onClose={() => { if (!importing) setImportModalOpen(false); }} title="Import LAB Billing Report">
             <div className="space-y-4">
               <p className="text-sm text-slate-500">
                 Upload a Lab Billing Excel file with columns: <strong>S.No, Bill No, Date, UHID No, Patient Name, Dr.Name, Terms, Amount, Disc Amt, Net Amount, Refer Amount, Cash Amount, Bank Amount, Credit Amount, Credit Status, Lab Report No, Report Status</strong>
@@ -1151,7 +1151,7 @@ export default function IncomeLabPage() {
               )}
 
               <div className="flex justify-end gap-2 pt-2">
-                <Button type="button" variant="secondary" onClick={() => setImportModalOpen(false)}>
+                <Button type="button" variant="secondary" onClick={() => { if (!importing) setImportModalOpen(false); }}>
                   {importResult ? "Close" : "Cancel"}
                 </Button>
                 {!importResult && (
@@ -1212,8 +1212,8 @@ export default function IncomeLabPage() {
                 <div className="grid grid-cols-2 gap-3 p-4 bg-slate-50 rounded-xl text-sm">
                   <div><span className="text-slate-500">Bill No:</span> <span className="font-semibold text-slate-800">{editingTxn.billNo}</span></div>
                   <div><span className="text-slate-500">Bill Date:</span> <span className="font-medium text-slate-700">{formatDate(editingTxn.billDate)}</span></div>
-                  <div><span className="text-slate-500">Patient:</span> <span className="font-medium text-slate-700">{editingTxn.patient?.patientName || "-"}</span></div>
-                  <div><span className="text-slate-500">UHID:</span> <span className="font-medium text-slate-700">{editingTxn.patient?.uhidNo || "-"}</span></div>
+                  <div><span className="text-slate-500">Patient:</span> <span className="font-medium text-slate-700">{editingTxn.patient?.name || "-"}</span></div>
+                  <div><span className="text-slate-500">UHID:</span> <span className="font-medium text-slate-700">{editingTxn.patient?.uhid || "-"}</span></div>
                   <div><span className="text-slate-500">Source:</span> <span className="font-medium text-slate-700">{editingTxn.incomeSource?.name || "-"}</span></div>
                 </div>
 
@@ -1401,7 +1401,7 @@ export default function IncomeLabPage() {
                                   />
                                 </td>
                                 <td className="px-3 py-2 font-medium text-slate-700">{p.incomeTxn?.billNo || "-"}</td>
-                                <td className="px-3 py-2 text-slate-500">{p.incomeTxn?.patient?.patientName || "-"}</td>
+                                <td className="px-3 py-2 text-slate-500">{p.incomeTxn?.patient?.name || "-"}</td>
                                 <td className="px-3 py-2 text-right font-medium text-slate-700">{formatCurrency(Number(p.billedAmt))}</td>
                                 <td className="px-3 py-2 text-right font-medium text-red-600">{formatCurrency(maxBal)}</td>
                                 <td className="px-3 py-2 text-right">
@@ -1512,8 +1512,8 @@ export default function IncomeLabPage() {
             ) : paymentTxn ? (
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl text-sm">
-                  <div><span className="text-slate-500">Patient:</span> <span className="font-medium text-slate-700">{paymentTxn.patient?.patientName || "-"}</span></div>
-                  <div><span className="text-slate-500">UHID:</span> <span className="font-medium text-slate-700">{paymentTxn.patient?.uhidNo || "-"}</span></div>
+                  <div><span className="text-slate-500">Patient:</span> <span className="font-medium text-slate-700">{paymentTxn.patient?.name || "-"}</span></div>
+                  <div><span className="text-slate-500">UHID:</span> <span className="font-medium text-slate-700">{paymentTxn.patient?.uhid || "-"}</span></div>
                   <div><span className="text-slate-500">Bill Date:</span> <span className="font-medium text-slate-700">{formatDate(paymentTxn.billDate)}</span></div>
                   <div><span className="text-slate-500">Net Amount:</span> <span className="font-medium text-slate-700">{paymentTxn.netAmount ? formatCurrency(Number(paymentTxn.netAmount)) : "-"}</span></div>
                 </div>

@@ -46,8 +46,8 @@ const getPatients = async (req, res) => {
     const where = {};
     if (search) {
       where.OR = [
-        { patientName: { contains: search, mode: "insensitive" } },
-        { uhidNo: { contains: search, mode: "insensitive" } },
+        { name: { contains: search, mode: "insensitive" } },
+        { uhid: { contains: search, mode: "insensitive" } },
         { mobileNo: { contains: search, mode: "insensitive" } },
         { bloodGroup: { contains: search, mode: "insensitive" } },
       ];
@@ -91,9 +91,9 @@ const createPatient = async (req, res) => {
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
   try {
-    const { regDate, uhidNo, patientName, address1, age, bloodGroup, mobileNo } = req.body;
+    const { regDate, uhid, name, address1, age, bloodGroup, mobileNo } = req.body;
 
-    let finalUhid = uhidNo || null;
+    let finalUhid = uhid || null;
     if (!finalUhid) {
       const count = await prisma.patient.count();
       finalUhid = `FT_${String(count + 1).padStart(4, "0")}`;
@@ -102,8 +102,8 @@ const createPatient = async (req, res) => {
     const patient = await prisma.patient.create({
       data: {
         regDate: parseDate(regDate),
-        uhidNo: finalUhid,
-        patientName,
+        uhid: finalUhid,
+        name,
         address1: address1 || null,
         age: parseIntSafe(age),
         bloodGroup: bloodGroup || null,
@@ -123,11 +123,11 @@ const updatePatient = async (req, res) => {
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
   try {
-    const { regDate, uhidNo, patientName, address1, age, bloodGroup, mobileNo } = req.body;
+    const { regDate, uhid, name, address1, age, bloodGroup, mobileNo } = req.body;
     const data = {};
     if (regDate !== undefined) data.regDate = parseDate(regDate);
-    if (uhidNo !== undefined) data.uhidNo = uhidNo || null;
-    if (patientName !== undefined) data.patientName = patientName;
+    if (uhid !== undefined) data.uhid = uhid || null;
+    if (name !== undefined) data.name = name;
     if (address1 !== undefined) data.address1 = address1 || null;
     if (age !== undefined) data.age = parseIntSafe(age);
     if (bloodGroup !== undefined) data.bloodGroup = bloodGroup || null;
@@ -202,9 +202,9 @@ const importPatients = async (req, res) => {
     for (let i = 0; i < dataRows.length; i++) {
       const row = dataRows[i];
       try {
-        const patientName = cleanValue(row[headerIdx["Patient Name"]]);
+        const name = cleanValue(row[headerIdx["Patient Name"]]);
 
-        if (!patientName) {
+        if (!name) {
           skipped++;
           errors.push({ row: headerRowIndex + 2 + i, reason: "Missing Patient Name" });
           continue;
@@ -216,29 +216,29 @@ const importPatients = async (req, res) => {
         const bloodGroup = cleanValue(row[headerIdx["Blood Group"]]);
         const mobileNo = cleanValue(row[headerIdx["Mobile NO"]]);
 
-        let uhidNo = cleanValue(row[headerIdx["UHID No"]]);
+        let uhid = cleanValue(row[headerIdx["UHID No"]]);
         let existing = null;
 
-        if (uhidNo) {
-          existing = await prisma.patient.findFirst({ where: { uhidNo } });
+        if (uhid) {
+          existing = await prisma.patient.findFirst({ where: { uhid } });
         } else {
           existing = await prisma.patient.findFirst({
-            where: { patientName, mobileNo: mobileNo || null },
+            where: { name, mobileNo: mobileNo || null },
           });
           if (!existing) {
-            uhidNo = `FT_${String(existingCount + created + 1).padStart(4, "0")}`;
+            uhid = `FT_${String(existingCount + created + 1).padStart(4, "0")}`;
           }
         }
 
         if (existing) {
           await prisma.patient.update({
             where: { id: existing.id },
-            data: { regDate, uhidNo: uhidNo || existing.uhidNo, patientName, address1, age, bloodGroup, mobileNo },
+            data: { regDate, uhid: uhid || existing.uhid, name, address1, age, bloodGroup, mobileNo },
           });
           updated++;
         } else {
           await prisma.patient.create({
-            data: { regDate, uhidNo, patientName, address1, age, bloodGroup, mobileNo },
+            data: { regDate, uhid, name, address1, age, bloodGroup, mobileNo },
           });
           created++;
         }
@@ -265,18 +265,18 @@ const importPatients = async (req, res) => {
 module.exports = { getPatients, getPatient, createPatient, updatePatient, deletePatient, importPatients };
 module.exports.validation = {
   create: [
-    body("patientName").notEmpty().withMessage("Patient name is required"),
+    body("name").notEmpty().withMessage("Patient name is required"),
     body("regDate").optional().isISO8601(),
-    body("uhidNo").optional().isString(),
+    body("uhid").optional().isString(),
     body("address1").optional().isString(),
     body("age").optional().isInt({ min: 0, max: 200 }),
     body("bloodGroup").optional().isString(),
     body("mobileNo").optional().isString(),
   ],
   update: [
-    body("patientName").optional().notEmpty(),
+    body("name").optional().notEmpty(),
     body("regDate").optional().isISO8601(),
-    body("uhidNo").optional().isString(),
+    body("uhid").optional().isString(),
     body("address1").optional().isString(),
     body("age").optional().isInt({ min: 0, max: 200 }),
     body("bloodGroup").optional().isString(),

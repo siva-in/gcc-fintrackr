@@ -2,6 +2,7 @@
 
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import api from "@/lib/api";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
@@ -27,7 +28,7 @@ interface IncomeTxn {
   grossAmount: number | null;
   discountAmount: number | null;
   advAdjt: number | null;
-  patient: { id: number; patientName: string; uhidNo: string | null; mobileNo: string | null } | null;
+  patient: { id: number; name: string; uhid: string | null; mobileNo: string | null } | null;
   rcvdPymts: { id: number; amount: number | null; paymentMode: { code: string; name: string } | null; paidBy: string | null }[];
   payables: { id: number; billedAmt: number; balanceAmt: number; status: string; remarks: string | null; doctor: { id: number; name: string } | null }[];
   incomeSource: { code: string; name: string } | null;
@@ -86,6 +87,7 @@ const getMonthRange = (year: number, month: number) => {
 };
 
 export default function IncomeOPPage() {
+  const router = useRouter();
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth() + 1;
@@ -121,6 +123,9 @@ export default function IncomeOPPage() {
   const [logLoading, setLogLoading] = useState(false);
 
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkVerifying, setBulkVerifying] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [importType, setImportType] = useState<"billing" | "detail">("billing");
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ inserted: number; updated: number; skipped: number; failed: number; total: number; errors?: { row: number; rowData: string; reason: string }[] } | null>(null);
@@ -136,6 +141,7 @@ export default function IncomeOPPage() {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingTxn, setEditingTxn] = useState<IncomeTxn | null>(null);
   const [editStatus, setEditStatus] = useState("");
+  const [editTxnStatus, setEditTxnStatus] = useState("UNVERIFIED");
   const [editRemarks, setEditRemarks] = useState("");
   const [editSaving, setEditSaving] = useState(false);
   const [editDetailLoading, setEditDetailLoading] = useState(false);
@@ -156,7 +162,7 @@ export default function IncomeOPPage() {
 
   const [settleModalOpen, setSettleModalOpen] = useState(false);
   const [settleDoctor, setSettleDoctor] = useState<{ id: number; name: string } | null>(null);
-  const [settlePayables, setSettlePayables] = useState<{ id: number; billNo: string; billedAmt: number; balanceAmt: number; status: string; paidTotal: number; remarks: string | null; incomeTxn: { billNo: string; patient: { patientName: string } | null } | null; pymts: { id: number; amount: number | null; paymentMode: { code: string; name: string } | null; paymentDate: string | null; paidBy: string | null }[] }[]>([]);
+  const [settlePayables, setSettlePayables] = useState<{ id: number; billNo: string; billedAmt: number; balanceAmt: number; status: string; paidTotal: number; remarks: string | null; incomeTxn: { billNo: string; patient: { name: string } | null } | null; pymts: { id: number; amount: number | null; paymentMode: { code: string; name: string } | null; paymentDate: string | null; paidBy: string | null }[] }[]>([]);
   const [settleGrandTotal, setSettleGrandTotal] = useState(0);
   const [settleLoading, setSettleLoading] = useState(false);
   const [settleSelected, setSettleSelected] = useState<Set<number>>(new Set());
@@ -320,6 +326,7 @@ export default function IncomeOPPage() {
       if (st) params.set("txnStatus", st);
       const { data } = await api.get(`/income/txns?${params.toString()}`);
       setTxns(data.txns);
+      setSelectedIds((prev) => new Set([...prev].filter((id) => !(data.txns as IncomeTxn[]).some((t) => t.id === id && t.txn_status === "VERIFIED"))));
       setPagination(data.pagination);
       setHasSearched(true);
     } catch {
@@ -345,6 +352,28 @@ export default function IncomeOPPage() {
   useEffect(() => {
     if (activeTab === "importlog") fetchImportLogs();
   }, [activeTab, logPage]);
+
+  useEffect(() => {
+    const saved = sessionStorage.getItem("opFilterState");
+    if (saved) {
+      sessionStorage.removeItem("opFilterState");
+      try {
+        const { page: sp, search: ss, fromDate: sfd, toDate: std, txnPaymentFilter: spf, txnDoctorFilter: sdf, txnStatusFilter: ssf } = JSON.parse(saved);
+        setPage(sp || 1);
+        setSearch(ss || "");
+        setFromDate(sfd || "");
+        setToDate(std || "");
+        setTxnPaymentFilter(spf || "");
+        setTxnDoctorFilter(sdf || "");
+        setTxnStatusFilter(ssf || "");
+        setActiveTab("transactions");
+        if (ss || sfd || std || spf || sdf || ssf) {
+          setHasSearched(true);
+          fetchTxns(sp || 1, ss || "", sfd || "", std || "", spf || "", sdf || "", ssf || "");
+        }
+      } catch {}
+    }
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -422,6 +451,43 @@ export default function IncomeOPPage() {
     }
   };
 
+  const handleToggleSelect = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    const unverified = txns.filter((t) => t.txn_status !== "VERIFIED");
+    if (selectedIds.size === unverified.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(unverified.map((t) => t.id)));
+    }
+  };
+
+  const handleBulkVerify = async () => {
+    if (selectedIds.size === 0) return;
+    setShowConfirmModal(true);
+  };
+
+  const handleConfirmVerify = async () => {
+    setShowConfirmModal(false);
+    setBulkVerifying(true);
+    try {
+      await api.post("/income/txns/bulk-verify", { ids: Array.from(selectedIds) });
+      toast.success(`${selectedIds.size} transaction(s) verified`);
+      setSelectedIds(new Set());
+      if (hasSearched) fetchTxns(page, search, fromDate, toDate, txnPaymentFilter, txnDoctorFilter, txnStatusFilter);
+    } catch {
+      toast.error("Bulk verify failed");
+    } finally {
+      setBulkVerifying(false);
+    }
+  };
+
   const handleViewErrors = async (log: ImportLogEntry) => {
     setErrorModalOpen(true);
     setSelectedLogInfo(log);
@@ -442,6 +508,7 @@ export default function IncomeOPPage() {
     setEditingTxn(null);
     setEditDetailLoading(true);
     setEditStatus("");
+    setEditTxnStatus("UNVERIFIED");
     setEditRemarks("");
     setEditGross("");
     setEditDiscount("");
@@ -451,6 +518,7 @@ export default function IncomeOPPage() {
       const { data } = await api.get(`/income/txns/${txn.id}`);
       setEditingTxn(data);
       setEditStatus(data.pymt_status || "FULLYPAID");
+      setEditTxnStatus(data.txn_status || "UNVERIFIED");
       setEditGross(data.grossAmount != null ? String(data.grossAmount) : "");
       setEditDiscount(data.discountAmount != null ? String(data.discountAmount) : "");
       setEditAdjt(data.advAdjt != null ? String(data.advAdjt) : "");
@@ -464,16 +532,12 @@ export default function IncomeOPPage() {
 
   const handleSaveError = async () => {
     if (!editingTxn) return;
-    if (!editRemarks.trim()) {
-      toast.error("Remarks is required");
-      return;
-    }
     setEditSaving(true);
     try {
       await api.patch(`/income/txns/${editingTxn.id}/error`, {
         pymt_status: editStatus,
-        txn_status: "VERIFIED",
-        errorReason: editRemarks,
+        txn_status: editTxnStatus,
+        errorReason: editRemarks || null,
         grossAmount: editGross || "0",
         discountAmount: editDiscount || "0",
         advAdjt: editAdjt || "0",
@@ -849,42 +913,90 @@ export default function IncomeOPPage() {
                 </div>
               </div>
 
+              {selectedIds.size > 0 && (
+                <div className="flex items-center gap-3 px-4 py-3 bg-indigo-50/50 border border-indigo-100 rounded-xl mb-4">
+                  <span className="text-sm font-medium text-indigo-700">{selectedIds.size} selected</span>
+                  <Button onClick={handleBulkVerify} isLoading={bulkVerifying} size="sm">
+                    <CheckCircle size={16} className="mr-1" /> Mark Verified
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={() => setSelectedIds(new Set())}>
+                    Clear
+                  </Button>
+                </div>
+              )}
+
+              <Modal isOpen={showConfirmModal} onClose={() => setShowConfirmModal(false)} title="Confirm Verification">
+                <div className="flex flex-col items-center text-center py-2">
+                  <div className="w-14 h-14 bg-amber-50 rounded-full flex items-center justify-center mb-4">
+                    <AlertTriangle size={28} className="text-amber-500" />
+                  </div>
+                  <p className="text-sm text-slate-600 mb-6">
+                    Are you sure you want to mark <strong>{selectedIds.size}</strong> transaction(s) as <strong>VERIFIED</strong>?
+                  </p>
+                  <div className="flex gap-3 w-full">
+                    <Button variant="secondary" className="flex-1" onClick={() => setShowConfirmModal(false)}>Cancel</Button>
+                    <Button className="flex-1" onClick={handleConfirmVerify} isLoading={bulkVerifying}>Confirm</Button>
+                  </div>
+                </div>
+              </Modal>
+
               <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-slate-200/60">
+                        <th className="w-10 px-2 py-3.5">
+                          {txns.some((t) => t.txn_status !== "VERIFIED") && (
+                            <input
+                              type="checkbox"
+                              checked={txns.filter((t) => t.txn_status !== "VERIFIED").length > 0 && selectedIds.size === txns.filter((t) => t.txn_status !== "VERIFIED").length}
+                              onChange={handleSelectAll}
+                              className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 accent-indigo-600"
+                            />
+                          )}
+                        </th>
                         <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Bill No</th>
                         <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden sm:table-cell">Date</th>
                         <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Patient</th>
                         <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden md:table-cell">UHID</th>
                         <th className="text-right px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Amount</th>
                         <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Payment</th>
-                        <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Status</th>
+                        <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Payment Status</th>
+                        <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Txn Status</th>
                         <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {!hasSearched ? (
-                        <tr><td colSpan={8} className="text-center py-12 text-slate-400">
+                        <tr><td colSpan={10} className="text-center py-12 text-slate-400">
                           Use the search or date filter to view transactions
                         </td></tr>
                       ) : loading ? (
-                        <tr><td colSpan={8} className="text-center py-12 text-slate-400">
+                        <tr><td colSpan={10} className="text-center py-12 text-slate-400">
                           <div className="flex items-center justify-center gap-2">
                             <div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin" />
                             Loading...
                           </div>
                         </td></tr>
                       ) : txns.length === 0 ? (
-                        <tr><td colSpan={8} className="text-center py-12 text-slate-400">No transactions found</td></tr>
+                        <tr><td colSpan={10} className="text-center py-12 text-slate-400">No transactions found</td></tr>
                       ) : (
                         txns.map((txn) => (
                           <tr key={txn.id} className={`hover:bg-slate-50/80 ${txn.txn_status === "ERROR" ? "bg-red-50/50" : ""}`}>
+                            <td className="w-10 px-2 py-3.5 text-center">
+                              {txn.txn_status !== "VERIFIED" && (
+                                <input
+                                  type="checkbox"
+                                  checked={selectedIds.has(txn.id)}
+                                  onChange={() => handleToggleSelect(txn.id)}
+                                  className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 accent-indigo-600"
+                                />
+                              )}
+                            </td>
                             <td className="px-5 py-3.5 font-medium text-slate-700">{txn.billNo}</td>
                             <td className="px-5 py-3.5 text-slate-500 hidden sm:table-cell">{formatDate(txn.billDate)}</td>
-                            <td className="px-5 py-3.5 text-slate-700">{txn.patient?.patientName || "-"}</td>
-                            <td className="px-5 py-3.5 text-slate-500 hidden md:table-cell">{txn.patient?.uhidNo || "-"}</td>
+                            <td className="px-5 py-3.5 text-slate-700">{txn.patient?.name || "-"}</td>
+                            <td className="px-5 py-3.5 text-slate-500 hidden md:table-cell">{txn.patient?.uhid || "-"}</td>
                             <td className="px-5 py-3.5 text-right font-medium text-slate-700">{txn.netAmount ? formatCurrency(Number(txn.netAmount)) : "-"}</td>
                             <td className="px-5 py-3.5">
                               <div className="flex flex-wrap gap-1">
@@ -898,6 +1010,15 @@ export default function IncomeOPPage() {
                               </div>
                             </td>
                             <td className="px-5 py-3.5">
+                              <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium ${
+                                txn.pymt_status === "FULLYPAID" ? "bg-emerald-50 text-emerald-600" :
+                                txn.pymt_status === "PARTIALPAID" ? "bg-amber-50 text-amber-600" :
+                                "bg-red-50 text-red-600"
+                              }`}>
+                                {txn.pymt_status}
+                              </span>
+                            </td>
+                            <td className="px-5 py-3.5">
                               <div className="flex flex-col gap-1">
                                 <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium ${txn.txn_status === "VERIFIED" ? "bg-emerald-50 text-emerald-600" : txn.txn_status === "UNVERIFIED" ? "bg-amber-50 text-amber-600" : "bg-red-50 text-red-600"}`}>
                                   {txn.txn_status}
@@ -908,16 +1029,15 @@ export default function IncomeOPPage() {
                               </div>
                             </td>
                             <td className="px-5 py-3.5 text-center">
-                              {txn.txn_status === "ERROR" ? (
-                                <button
-                                  onClick={() => openEditModal(txn)}
-                                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-amber-50 text-amber-600 rounded-lg text-xs font-medium hover:bg-amber-100 transition-colors"
-                                >
-                                  <Eye size={14} /> Review
-                                </button>
-                              ) : (
-                                <span className="text-xs text-slate-400">-</span>
-                              )}
+                              <button
+                                onClick={() => {
+                                  sessionStorage.setItem("opFilterState", JSON.stringify({ page, search, fromDate, toDate, txnPaymentFilter, txnDoctorFilter, txnStatusFilter, activeTab }));
+                                  router.push(`/income/op/txns/${txn.id}`);
+                                }}
+                                className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-medium hover:bg-indigo-100 transition-colors"
+                              >
+                                <Eye size={14} /> Edit
+                              </button>
                             </td>
                           </tr>
                         ))
@@ -1031,14 +1151,14 @@ export default function IncomeOPPage() {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {logLoading ? (
-                        <tr><td colSpan={8} className="text-center py-12 text-slate-400">
+                        <tr><td colSpan={9} className="text-center py-12 text-slate-400">
                           <div className="flex items-center justify-center gap-2">
                             <div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin" />
                             Loading...
                           </div>
                         </td></tr>
                       ) : importLogs.length === 0 ? (
-                        <tr><td colSpan={8} className="text-center py-12 text-slate-400">No import logs found</td></tr>
+                        <tr><td colSpan={9} className="text-center py-12 text-slate-400">No import logs found</td></tr>
                       ) : (
                         importLogs.map((log) => (
                           <tr key={log.id} className="hover:bg-slate-50/80">
@@ -1149,7 +1269,7 @@ export default function IncomeOPPage() {
             </>
           )}
 
-          <Modal isOpen={importModalOpen} onClose={() => setImportModalOpen(false)} title={importType === "detail" ? "Import OP Detail Report" : "Import OP Billing Report"}>
+          <Modal isOpen={importModalOpen} onClose={() => { if (!importing) setImportModalOpen(false); }} title={importType === "detail" ? "Import OP Detail Report" : "Import OP Billing Report"}>
             <div className="space-y-4">
               {importType === "billing" ? (
                 <>
@@ -1218,7 +1338,7 @@ export default function IncomeOPPage() {
               )}
 
               <div className="flex justify-end gap-2 pt-2">
-                <Button type="button" variant="secondary" onClick={() => setImportModalOpen(false)}>
+                <Button type="button" variant="secondary" onClick={() => { if (!importing) setImportModalOpen(false); }}>
                   {importResult ? "Close" : "Cancel"}
                 </Button>
                 {!importResult && (
@@ -1269,7 +1389,7 @@ export default function IncomeOPPage() {
             </div>
           </Modal>
 
-          <Modal isOpen={editModalOpen} onClose={() => setEditModalOpen(false)} title="Review Error Record">
+          <Modal isOpen={editModalOpen} onClose={() => setEditModalOpen(false)} title="Edit Transaction">
             {editDetailLoading ? (
               <div className="flex items-center justify-center py-12">
                 <div className="w-6 h-6 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin" />
@@ -1279,8 +1399,8 @@ export default function IncomeOPPage() {
                 <div className="grid grid-cols-2 gap-3 p-4 bg-slate-50 rounded-xl text-sm">
                   <div><span className="text-slate-500">Bill No:</span> <span className="font-semibold text-slate-800">{editingTxn.billNo}</span></div>
                   <div><span className="text-slate-500">Bill Date:</span> <span className="font-medium text-slate-700">{formatDate(editingTxn.billDate)}</span></div>
-                  <div><span className="text-slate-500">Patient:</span> <span className="font-medium text-slate-700">{editingTxn.patient?.patientName || "-"}</span></div>
-                  <div><span className="text-slate-500">UHID:</span> <span className="font-medium text-slate-700">{editingTxn.patient?.uhidNo || "-"}</span></div>
+                  <div><span className="text-slate-500">Patient:</span> <span className="font-medium text-slate-700">{editingTxn.patient?.name || "-"}</span></div>
+                  <div><span className="text-slate-500">UHID:</span> <span className="font-medium text-slate-700">{editingTxn.patient?.uhid || "-"}</span></div>
                   <div><span className="text-slate-500">Mobile:</span> <span className="font-medium text-slate-700">{editingTxn.patient?.mobileNo || "-"}</span></div>
                   <div><span className="text-slate-500">Source:</span> <span className="font-medium text-slate-700">{editingTxn.incomeSource?.name || "-"}</span></div>
                 </div>
@@ -1386,7 +1506,7 @@ export default function IncomeOPPage() {
                 )}
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Update Status</label>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Payment Status</label>
                   <select
                     value={editStatus}
                     onChange={(e) => setEditStatus(e.target.value)}
@@ -1398,11 +1518,24 @@ export default function IncomeOPPage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Remarks <span className="text-red-500">*</span></label>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Verification Status</label>
+                  <select
+                    value={editTxnStatus}
+                    onChange={(e) => setEditTxnStatus(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                  >
+                    <option value="VERIFIED">Verified</option>
+                    <option value="UNVERIFIED">Unverified</option>
+                    <option value="ERROR">Error</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Remarks</label>
                   <textarea
                     value={editRemarks}
                     onChange={(e) => setEditRemarks(e.target.value)}
-                    placeholder="Add remarks or correction notes..."
+                    placeholder="Optional remarks or correction notes..."
                     rows={3}
                     className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all resize-none"
                   />
@@ -1410,8 +1543,8 @@ export default function IncomeOPPage() {
 
                 <div className="flex justify-end gap-2 pt-2">
                   <Button variant="secondary" onClick={() => setEditModalOpen(false)}>Cancel</Button>
-                  <Button onClick={handleSaveError} isLoading={editSaving} disabled={!editRemarks.trim()}>
-                    <CheckCircle size={16} className="mr-1" /> Confirm & Save
+                  <Button onClick={handleSaveError} isLoading={editSaving}>
+                    <CheckCircle size={16} className="mr-1" /> Save Changes
                   </Button>
                 </div>
               </div>
@@ -1472,7 +1605,7 @@ export default function IncomeOPPage() {
                                   />
                                 </td>
                                 <td className="px-3 py-2 font-medium text-slate-700">{p.incomeTxn?.billNo || "-"}</td>
-                                <td className="px-3 py-2 text-slate-500">{p.incomeTxn?.patient?.patientName || "-"}</td>
+                                <td className="px-3 py-2 text-slate-500">{p.incomeTxn?.patient?.name || "-"}</td>
                                 <td className="px-3 py-2 text-right font-medium text-slate-700">{formatCurrency(Number(p.billedAmt))}</td>
                                 <td className="px-3 py-2 text-right font-medium text-red-600">{formatCurrency(maxBal)}</td>
                                 <td className="px-3 py-2 text-right">

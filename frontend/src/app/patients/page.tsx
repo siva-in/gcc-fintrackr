@@ -13,8 +13,8 @@ import Pagination from "@/components/ui/Pagination";
 interface Patient {
   id: number;
   regDate: string | null;
-  uhidNo: string | null;
-  patientName: string;
+  uhid: string | null;
+  name: string;
   address1: string | null;
   age: number | null;
   bloodGroup: string | null;
@@ -32,7 +32,7 @@ export default function PatientsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [editingPatient, setEditingPatient] = useState<Patient | null>(null);
-  const [form, setForm] = useState({ regDate: "", uhidNo: "", patientName: "", address1: "", age: "", bloodGroup: "", mobileNo: "" });
+  const [form, setForm] = useState({ regDate: "", uhid: "", name: "", address1: "", age: "", bloodGroup: "", mobileNo: "" });
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ created: number; updated: number; skipped: number; total: number; errors?: { row: number; reason: string }[] } | null>(null);
@@ -59,7 +59,7 @@ export default function PatientsPage() {
 
   const openCreate = () => {
     setEditingPatient(null);
-    setForm({ regDate: "", uhidNo: "", patientName: "", address1: "", age: "", bloodGroup: "", mobileNo: "" });
+    setForm({ regDate: "", uhid: "", name: "", address1: "", age: "", bloodGroup: "", mobileNo: "" });
     setModalOpen(true);
   };
 
@@ -67,8 +67,8 @@ export default function PatientsPage() {
     setEditingPatient(patient);
     setForm({
       regDate: patient.regDate ? new Date(patient.regDate).toISOString().split("T")[0] : "",
-      uhidNo: patient.uhidNo || "",
-      patientName: patient.patientName,
+      uhid: patient.uhid || "",
+      name: patient.name,
       address1: patient.address1 || "",
       age: patient.age != null ? String(patient.age) : "",
       bloodGroup: patient.bloodGroup || "",
@@ -84,7 +84,7 @@ export default function PatientsPage() {
       const payload = {
         ...form,
         regDate: form.regDate || undefined,
-        uhidNo: form.uhidNo || undefined,
+        uhid: form.uhid || undefined,
         age: form.age ? parseInt(form.age) : undefined,
         address1: form.address1 || undefined,
         bloodGroup: form.bloodGroup || undefined,
@@ -115,7 +115,7 @@ export default function PatientsPage() {
   };
 
   const handleDelete = async (patient: Patient) => {
-    if (!confirm(`Delete patient "${patient.patientName}"?`)) return;
+    if (!confirm(`Delete patient "${patient.name}"?`)) return;
     try {
       await api.delete(`/patients/${patient.id}`);
       toast.success("Patient deleted");
@@ -223,8 +223,8 @@ export default function PatientsPage() {
               ) : (
                 patients.map((p) => (
                   <tr key={p.id} className="hover:bg-slate-50/80">
-                    <td className="px-5 py-3.5 font-medium text-slate-700">{p.uhidNo || "-"}</td>
-                    <td className="px-5 py-3.5 text-slate-700">{p.patientName}</td>
+                    <td className="px-5 py-3.5 font-medium text-slate-700">{p.uhid || "-"}</td>
+                    <td className="px-5 py-3.5 text-slate-700">{p.name}</td>
                     <td className="px-5 py-3.5 text-slate-500 hidden sm:table-cell">{p.age ?? "-"}</td>
                     <td className="px-5 py-3.5 text-slate-500 hidden md:table-cell">{p.bloodGroup || "-"}</td>
                     <td className="px-5 py-3.5 text-slate-500">{p.mobileNo || "-"}</td>
@@ -259,15 +259,15 @@ export default function PatientsPage() {
             />
             <Input
               label="UHID No"
-              value={form.uhidNo}
-              onChange={(e) => setForm({ ...form, uhidNo: e.target.value })}
+              value={form.uhid}
+              onChange={(e) => setForm({ ...form, uhid: e.target.value })}
               placeholder="Auto-generated if blank"
             />
           </div>
           <Input
             label="Patient Name *"
-            value={form.patientName}
-            onChange={(e) => setForm({ ...form, patientName: e.target.value })}
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
             required
           />
           <Input
@@ -304,7 +304,7 @@ export default function PatientsPage() {
       </Modal>
 
       {/* Import Modal */}
-      <Modal isOpen={importModalOpen} onClose={() => setImportModalOpen(false)} title="Import Patients">
+      <Modal isOpen={importModalOpen} onClose={() => { if (!importing) setImportModalOpen(false); }} title="Import Patients">
         <div className="space-y-4">
           <p className="text-sm text-slate-500">
             Upload an Excel file with columns: <strong>Reg.Date, UHID No, Patient Name, Address1, Age, Blood Group, Mobile NO</strong>
@@ -349,7 +349,7 @@ export default function PatientsPage() {
           )}
 
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="secondary" onClick={() => setImportModalOpen(false)}>
+            <Button type="button" variant="secondary" onClick={() => { if (!importing) setImportModalOpen(false); }}>
               {importResult ? "Close" : "Cancel"}
             </Button>
             {!importResult && (

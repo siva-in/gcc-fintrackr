@@ -3,7 +3,13 @@ const { prisma } = require("../middleware/auth");
 
 const getDoctors = async (req, res) => {
   try {
-    const { page = 1, limit = 20, search = "" } = req.query;
+    const { page = 1, limit = 20, search = "", all } = req.query;
+
+    if (all === "true") {
+      const doctors = await prisma.doctor.findMany({ orderBy: { name: "asc" } });
+      return res.json(doctors);
+    }
+
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     const where = search

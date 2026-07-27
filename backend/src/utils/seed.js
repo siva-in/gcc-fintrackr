@@ -25,13 +25,25 @@ const PAYMENT_MODES = [
 ];
 
 const INSURANCE_BIZ_PARTNERS = [
-  "Niva Bupa Health",
-  "Aditya Birla Health",
-  "Bajaj Allianz",
-  "National Insurance",
-  "CMScheme",
-  "PMScheme",
+  "NK48",
+  "CMCHIS",
+  "NHIS",
+  "Medi Assist",
+  "Bajaj Allianz General Insurance",
+  "Chola MS General Insurance",
+  "Ericsson TPA",
+  "FHPL (Family Health Plan Insurance TPA Ltd.)",
+  "Galaxy Health Insurance",
+  "Go Digit General Insurance",
+  "Link-K TPA",
+  "Niva Bupa Health Insurance",
+  "Reliance General Insurance",
+  "SBI General Insurance",
+  "Vidal Health TPA",
+  "Volo Health Insurance TPA",
 ];
+
+const VENDOR_BIZ_PARTNERS = [{ bpName: "Siva Neuro Diagnostics", mobile: "8883069610" }];
 
 async function seedIncomeSources(runner) {
   for (const { code, name } of INCOME_SOURCES) {
@@ -68,6 +80,24 @@ async function seedInsuranceBizPartners(runner) {
   }
 }
 
+async function seedVendorBizPartners(runner) {
+  for (const v of VENDOR_BIZ_PARTNERS) {
+    const existing = await runner.bizPartner.findFirst({
+      where: { bpType: "VENDOR", bpName: v.bpName },
+    });
+    if (!existing) {
+      await runner.bizPartner.create({
+        data: {
+          bpType: "VENDOR",
+          bpName: v.bpName,
+          mobile: v.mobile || null,
+          isActive: true,
+        },
+      });
+    }
+  }
+}
+
 async function createCompanyRoles(runner) {
   for (const name of COMPANY_ROLES) {
     const existing = await runner.role.findFirst({ where: { name, type: "COMPANY", orgId: null } });
@@ -90,13 +120,13 @@ async function createOrgRoles(runner) {
 }
 
 async function main() {
-  name = "admin";
+  const name = "siva";
   const existingAdmin = await prisma.user.findUnique({
     where: { username: name },
   });
 
   if (!existingAdmin) {
-    const hashedPassword = await bcrypt.hash("a", 12);
+    const hashedPassword = await bcrypt.hash("s", 12);
 
     const admin = await prisma.user.create({
       data: {
@@ -133,6 +163,7 @@ async function main() {
   await seedIncomeSources(prisma);
   await seedPaymentModes(prisma);
   await seedInsuranceBizPartners(prisma);
+  await seedVendorBizPartners(prisma);
 }
 
 main()

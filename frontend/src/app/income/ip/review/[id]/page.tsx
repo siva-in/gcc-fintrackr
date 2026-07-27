@@ -19,7 +19,7 @@ interface IncomeTxn {
   ipNo: string | null;
   pymt_status: string;
   txn_status: string;
-  patient: { id: number; patientName: string; uhidNo: string | null; mobileNo: string | null } | null;
+  patient: { id: number; name: string; uhid: string | null; mobileNo: string | null } | null;
   incomeSource: { code: string; name: string } | null;
   rcvdPymts: { id: number; amount: number | null; paymentMode: { code: string; name: string } | null; paymentDate: string | null; paidBy: string | null }[];
   payables: { id: number; billedAmt: number; payableAmt: number | null; balanceAmt: number; status: string; remarks: string | null; doctor: { id: number; name: string } | null }[];
@@ -337,7 +337,7 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
           billedAmt: item.billedAmt,
           payableAmt: item.payableAmt,
           doctorId: item.doctorId || null,
-          patientName: txn.patient?.patientName || null,
+          name: txn.patient?.name || null,
           isOptional: item.isOptional,
         }));
 
@@ -430,11 +430,11 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">Patient</label>
-                <p className="text-sm font-medium text-slate-700">{txn.patient?.patientName || "-"}</p>
+                <p className="text-sm font-medium text-slate-700">{txn.patient?.name || "-"}</p>
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">UHID</label>
-                <p className="text-sm font-medium text-slate-700">{txn.patient?.uhidNo || "-"}</p>
+                <p className="text-sm font-medium text-slate-700">{txn.patient?.uhid || "-"}</p>
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">IP No</label>

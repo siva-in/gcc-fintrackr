@@ -29,7 +29,7 @@ interface IncomeTxn {
   pymt_status: string;
   txn_status: string;
   errorReason: string | null;
-  patient: { id: number; patientName: string; uhidNo: string | null; mobileNo: string | null } | null;
+  patient: { id: number; name: string; uhid: string | null; mobileNo: string | null } | null;
   rcvdPymts: { id: number; amount: number | null; paymentMode: { code: string; name: string } | null; paidBy: string | null }[];
   payables: { id: number; billedAmt: number; balanceAmt: number; status: string; remarks: string | null; doctor: { id: number; name: string } | null }[];
   incomeSource: { code: string; name: string } | null;
@@ -166,7 +166,7 @@ function IncomeIPPageContent() {
 
   const [settleModalOpen, setSettleModalOpen] = useState(false);
   const [settleDoctor, setSettleDoctor] = useState<{ id: number; name: string } | null>(null);
-  const [settlePayables, setSettlePayables] = useState<{ id: number; billNo: string; billedAmt: number; balanceAmt: number; status: string; paidTotal: number; remarks: string | null; incomeTxn: { billNo: string; patient: { patientName: string } | null } | null; pymts: { id: number; amount: number | null; paymentMode: { code: string; name: string } | null; paymentDate: string | null; paidBy: string | null }[] }[]>([]);
+  const [settlePayables, setSettlePayables] = useState<{ id: number; billNo: string; billedAmt: number; balanceAmt: number; status: string; paidTotal: number; remarks: string | null; incomeTxn: { billNo: string; patient: { name: string } | null } | null; pymts: { id: number; amount: number | null; paymentMode: { code: string; name: string } | null; paymentDate: string | null; paidBy: string | null }[] }[]>([]);
   const [settleGrandTotal, setSettleGrandTotal] = useState(0);
   const [settleLoading, setSettleLoading] = useState(false);
   const [settleSelected, setSettleSelected] = useState<Set<number>>(new Set());
@@ -785,8 +785,8 @@ function IncomeIPPageContent() {
                         >
                           <td className="px-5 py-3.5 font-medium text-slate-700">{txn.billNo}</td>
                           <td className="px-5 py-3.5 text-slate-500 hidden sm:table-cell">{formatDate(txn.billDate)}</td>
-                          <td className="px-5 py-3.5 text-slate-700">{txn.patient?.patientName || "-"}</td>
-                          <td className="px-5 py-3.5 text-slate-500 hidden md:table-cell">{txn.patient?.uhidNo || "-"}</td>
+                          <td className="px-5 py-3.5 text-slate-700">{txn.patient?.name || "-"}</td>
+                          <td className="px-5 py-3.5 text-slate-500 hidden md:table-cell">{txn.patient?.uhid || "-"}</td>
                           <td className="px-5 py-3.5 text-right font-medium text-slate-700">{txn.netAmount ? formatCurrency(Number(txn.netAmount)) : "-"}</td>
                           <td className="px-5 py-3.5">
                             <div className="flex flex-wrap gap-1">
@@ -1034,7 +1034,7 @@ function IncomeIPPageContent() {
           </>
         )}
 
-        <Modal isOpen={importModalOpen} onClose={() => setImportModalOpen(false)} title={importType === "ipd" ? "Import IPD Detail Report" : "Import IP Billing Report"}>
+        <Modal isOpen={importModalOpen} onClose={() => { if (!importing) setImportModalOpen(false); }} title={importType === "ipd" ? "Import IPD Detail Report" : "Import IP Billing Report"}>
           <div className="space-y-4">
             {importType === "ip" ? (
               <>
@@ -1093,7 +1093,7 @@ function IncomeIPPageContent() {
             )}
 
             <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="secondary" onClick={() => setImportModalOpen(false)}>
+              <Button type="button" variant="secondary" onClick={() => { if (!importing) setImportModalOpen(false); }}>
                 {importResult ? "Close" : "Cancel"}
               </Button>
               {!importResult && (
@@ -1197,7 +1197,7 @@ function IncomeIPPageContent() {
                                 />
                               </td>
                               <td className="px-3 py-2 font-medium text-slate-700">{p.incomeTxn?.billNo || "-"}</td>
-                              <td className="px-3 py-2 text-slate-500">{p.incomeTxn?.patient?.patientName || "-"}</td>
+                              <td className="px-3 py-2 text-slate-500">{p.incomeTxn?.patient?.name || "-"}</td>
                               <td className="px-3 py-2 text-right font-medium text-slate-700">{formatCurrency(Number(p.billedAmt))}</td>
                               <td className="px-3 py-2 text-right font-medium text-red-600">{formatCurrency(maxBal)}</td>
                               <td className="px-3 py-2 text-right">

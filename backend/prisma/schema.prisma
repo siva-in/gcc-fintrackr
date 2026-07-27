@@ -28,12 +28,30 @@ enum RoleType {
   ORG
 }
 
+
+enum OrgStatus {
+  ACTIVE
+  INACTIVE
+}
+
 model Company {
   id        Int      @id @default(autoincrement())
   name      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+model Organization {
+  id        Int       @id @default(autoincrement())
+  name      String
+  status    OrgStatus @default(ACTIVE)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  roles    Role[]
+  requests Request[]
+}
+
 
 model User {
   id        Int        @id @default(autoincrement())
@@ -81,54 +99,6 @@ model UserRole {
   @@index([userId])
   @@index([roleId])
 }
-
-model Patient {
-  id          Int       @id @default(autoincrement())
-  regDate     DateTime? @db.Date
-  uhidNo      String?
-  patientName String
-  address1    String?
-  age         Int?
-  bloodGroup  String?
-  mobileNo    String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
-  incomeTxns  IncomeTxn[]
-  receivables Receivable[]
-  ipAdms      IPAdm[]
-
-  @@unique([uhidNo], map: "Patient_uhidNo_key")
-}
-
-model Doctor {
-  id        Int      @id @default(autoincrement())
-  name      String
-  degree    String
-  descName  String
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  payables Payable[]
-}
-
-model Organization {
-  id        Int       @id @default(autoincrement())
-  name      String
-  status    OrgStatus @default(ACTIVE)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-
-  roles    Role[]
-  requests Request[]
-}
-
-enum OrgStatus {
-  ACTIVE
-  INACTIVE
-}
-
 model Request {
   id          Int            @id @default(autoincrement())
   orgId       Int
@@ -163,117 +133,6 @@ model Approval {
   @@unique([requestId, approverId])
   @@index([approverId])
 }
-
-enum IncomeStatus {
-  FULLYPAID
-  PARTIALPAID
-  UNPAID
-}
-
-enum TxnStatus {
-  VERIFIED
-  UNVERIFIED
-  ERROR
-}
-
-enum PayableType {
-  DOCTOR
-}
-
-enum PayableStatus {
-  PENDING
-  PARTIALLY_PAID
-  PAID
-  CANCELLED
-}
-
-enum BpTypeEnum {
-  VENDOR
-  INSURANCE
-
-  @@map("bp_type_enum")
-}
-
-enum ArTypeEnum {
-  INSURANCE
-  PATIENTS
-  EMPLOYEE
-
-  @@map("ar_type_enum")
-}
-
-model IncomeSource {
-  id       Int     @id @default(autoincrement())
-  code     String  @unique @db.VarChar(20)
-  name     String  @db.VarChar(100)
-  isActive Boolean @default(true)
-
-  incomeTxns IncomeTxn[]
-
-  @@map("income_src")
-}
-
-model PaymentMode {
-  id   Int    @id @default(autoincrement())
-  code String @unique @db.VarChar(20)
-  name String @db.VarChar(50)
-
-  rcvdPymts    RcvdPymt[]
-  payablePymts PayablePymt[]
-  rcvlPymts    RcvlPymt[]
-
-  @@map("payment_mode")
-}
-
-model IncomeTxn {
-  id             Int          @id @default(autoincrement())
-  incomeSourceId Int
-  patientId      Int?
-  billNo         String       @unique @db.VarChar(50)
-  billDate       DateTime?    @db.Date
-  ipNo           String?      @db.VarChar(50)
-  grossAmount    Decimal?     @db.Decimal(12, 2)
-  discountAmount Decimal?     @db.Decimal(12, 2)
-  advAdjt        Decimal?     @db.Decimal(12, 2)
-  netAmount      Decimal?     @db.Decimal(12, 2)
-  pymt_status    IncomeStatus @map("status")
-  txn_status     TxnStatus    @default(UNVERIFIED)
-  errorReason    String?      @db.Text
-  createdAt      DateTime     @default(now())
-
-  incomeSource IncomeSource @relation(fields: [incomeSourceId], references: [id])
-  patient      Patient?     @relation(fields: [patientId], references: [id])
-  rcvdPymts    RcvdPymt[]
-  payables     Payable[]
-  incomeDtls   IncomeDtl[]
-  receivables  Receivable[]
-  ipDtl        IPDtl?
-
-  @@index([incomeSourceId])
-  @@index([patientId])
-  @@index([billNo])
-  @@map("income_txn")
-}
-
-model RcvdPymt {
-  id            Int       @id @default(autoincrement())
-  incomeTxnId   Int
-  paymentModeId Int?
-  amount        Decimal?  @db.Decimal(12, 2)
-  paymentDate   DateTime? @db.Date
-  transactionNo String?   @db.VarChar(100)
-  bankName      String?   @db.VarChar(100)
-  paidBy        String?   @db.VarChar(100)
-  remarks       String?
-
-  incomeTxn   IncomeTxn    @relation(fields: [incomeTxnId], references: [id], onDelete: Cascade)
-  paymentMode PaymentMode? @relation(fields: [paymentModeId], references: [id])
-
-  @@index([incomeTxnId])
-  @@index([paymentModeId])
-  @@map("rcvd_pymts")
-}
-
 model ImportLog {
   id            Int       @id @default(autoincrement())
   fileName      String    @db.VarChar(255)
@@ -306,9 +165,158 @@ model ImportError {
   @@map("import_error")
 }
 
+model Patient {
+  id         Int       @id @default(autoincrement())
+  regDate    DateTime? @db.Date
+  uhid       String?   @unique
+  name       String
+  lname      String?
+  address1   String?
+  age        Int?
+  bloodGroup String?
+  mobileNo   String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  incomeTxns  IncomeTxn[]
+  receivables Receivable[]
+  ipAdms      IPAdm[]
+
+  @@index([uhid])
+  @@index([name])
+  @@map("patient")
+}
+
+model Doctor {
+  id        Int      @id @default(autoincrement())
+  name      String
+  lname     String?
+  degree    String
+  descName  String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  payables Payable[]
+
+  @@index([name])
+}
+
+
+
+
+
+enum IncomeStatus {
+  FULLYPAID
+  PARTIALPAID
+  UNPAID
+}
+
+enum TxnStatus {
+  VERIFIED
+  UNVERIFIED
+  ERROR
+}
+
+enum PartyType {
+  DOCTOR
+  VENDOR
+  INSURANCE
+  CORPORATE
+  PATIENT
+  EMPLOYEE
+  LAB
+  RADIOLOGY
+  GOVERNMENT
+  OTHER
+
+  @@map("party_type_enum")
+}
+
+enum PayableStatus {
+  PENDING
+  PARTIALLY_PAID
+  PAID
+  CANCELLED
+}
+
+model IncomeSource {
+  id       Int     @id @default(autoincrement())
+  code     String  @unique @db.VarChar(20)
+  name     String  @db.VarChar(100)
+  isActive Boolean @default(true)
+  incomeTxns IncomeTxn[]
+
+  @@index([code])
+  @@map("income_src")
+}
+
+model PaymentMode {
+  id   Int    @id @default(autoincrement())
+  code String @unique @db.VarChar(20)
+  name String @db.VarChar(50)
+
+  rcvdPymts    RcvdPymt[]
+  payablePymts PayablePymt[]
+  rcvlPymts    RcvlPymt[]
+
+  @@index([code])
+  @@map("payment_mode")
+}
+
+model IncomeTxn {
+  id             Int          @id @default(autoincrement())
+  incomeSourceId Int
+  patientId      Int?
+  billNo         String       @unique @db.VarChar(50)
+  billDate       DateTime?    @db.Date
+  ipNo           String?      @db.VarChar(50)
+  grossAmount    Decimal?     @db.Decimal(12, 2)
+  discountAmount Decimal?     @db.Decimal(12, 2)
+  advAdjt        Decimal?     @db.Decimal(12, 2)
+  netAmount      Decimal?     @db.Decimal(12, 2)
+  pymt_status    IncomeStatus @map("status")
+  txn_status     TxnStatus    @default(UNVERIFIED)
+  errorReason    String?      @db.Text
+  createdAt      DateTime     @default(now())
+
+  incomeSource IncomeSource @relation(fields: [incomeSourceId], references: [id])
+  patient      Patient?     @relation(fields: [patientId], references: [id])
+  rcvdPymts    RcvdPymt[]
+  payables     Payable[]
+  incomeDtls   IncomeDtl[]
+  receivables  Receivable[]
+  ipDtl        IPDtl?
+
+  @@index([incomeSourceId])
+  @@index([patientId])
+  @@index([billNo])
+  @@index([billDate])
+  @@map("income_txn")
+}
+
+model RcvdPymt {
+  id            Int       @id @default(autoincrement())
+  incomeTxnId   Int
+  paymentModeId Int?
+  amount        Decimal?  @db.Decimal(12, 2)
+  paymentDate   DateTime? @db.Date
+  transactionNo String?   @db.VarChar(100)
+  bankName      String?   @db.VarChar(100)
+  paidBy        String?   @db.VarChar(100)
+  remarks       String?
+
+  incomeTxn   IncomeTxn    @relation(fields: [incomeTxnId], references: [id], onDelete: Cascade)
+  paymentMode PaymentMode? @relation(fields: [paymentModeId], references: [id])
+
+  @@index([incomeTxnId])
+  @@index([paymentModeId])
+  @@map("rcvd_pymts")
+}
+
 model Payable {
   id          Int           @id @default(autoincrement())
-  payableType PayableType
+  partyType PartyType @map("party_type")
   partyId     Int
   incomeTxnId Int
   billDate    DateTime      @db.Date
@@ -368,7 +376,7 @@ model IncomeDtl {
 
 model BizPartner {
   id          Int        @id @default(autoincrement())
-  bpType      BpTypeEnum @map("bp_type")
+  bpType      PartyType @map("bp_type")
   bpName      String     @map("bp_Name") @db.VarChar(200)
   contactName String?    @map("contact_name") @db.VarChar(100)
   mobile      String?    @db.VarChar(20)
@@ -385,15 +393,14 @@ model BizPartner {
 
 model Receivable {
   id          Int           @id @default(autoincrement())
-  arType      ArTypeEnum    @map("ar_type")
+  arType      PartyType    @map("ar_type")
   bpId        Int?          @map("bpId")
-  // DB CHECK constraint enforces: bpId is mandatory for INSURANCE/EMPLOYEE arType.
+  // DB CHECK constraint enforces: bpId is mandatory for INSURANCE arType.
   patId       Int           @map("patId")
   incomeTxnId Int?          @map("income_txn_id")
   billDate    DateTime      @map("bill_date") @db.Date
   dueDate     DateTime?     @map("due_date") @db.Date
   dueAmt      Decimal       @map("due_amt") @db.Decimal(12, 2)
-  paidAmt     Decimal       @map("paid_amt") @db.Decimal(12, 2)
   balanceAmt  Decimal       @map("balance_amt") @db.Decimal(12, 2)
   status      PayableStatus @default(PENDING)
   remarks     String?       @db.Text

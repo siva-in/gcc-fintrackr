@@ -167,22 +167,22 @@ const importOPBilling = async (req, res) => {
         const rowData = getRowValuesAsText(row, EXPECTED_HEADERS, headerIdx);
         const rowNum = headerRowIndex + 2 + i;
 
-        const uhidNo = cleanValue(row[headerIdx["UHID No"]]);
-        const patientName = cleanValue(row[headerIdx["Patient Name"]]);
+        const uhid = cleanValue(row[headerIdx["UHID No"]]);
+        const name = cleanValue(row[headerIdx["Patient Name"]]);
         const mobileNo = cleanValue(row[headerIdx["Mobile No"]]);
         let patientId = null;
 
-        if (uhidNo) {
-          const patient = await prisma.patient.findFirst({ where: { uhidNo } });
+        if (uhid) {
+          const patient = await prisma.patient.findFirst({ where: { uhid } });
           if (patient) {
             patientId = patient.id;
           } else {
             failed++;
-            errors.push({ rowNumber: rowNum, rowData, reason: `UHID ${uhidNo} not found in database` });
+            errors.push({ rowNumber: rowNum, rowData, reason: `UHID ${uhid} not found in database` });
             continue;
           }
-        } else if (patientName) {
-          const existingPatient = await prisma.patient.findFirst({ where: { patientName } });
+        } else if (name) {
+          const existingPatient = await prisma.patient.findFirst({ where: { name } });
           if (existingPatient) {
             patientId = existingPatient.id;
           } else {
@@ -191,8 +191,8 @@ const importOPBilling = async (req, res) => {
             const newPatient = await prisma.patient.create({
               data: {
                 regDate: new Date(),
-                uhidNo: newUhid,
-                patientName,
+                uhid: newUhid,
+                name,
                 mobileNo: mobileNo || null,
               },
             });
@@ -262,7 +262,7 @@ const importOPBilling = async (req, res) => {
               billDate: toDateOnly(billDate),
               grossAmount: netAmount,
               netAmount,
-            }, pymtStatus, "VERIFIED"),
+            }, pymtStatus, "UNVERIFIED"),
           });
           await prisma.rcvdPymt.deleteMany({ where: { incomeTxnId: existing.id } });
           updated++;
@@ -278,7 +278,7 @@ const importOPBilling = async (req, res) => {
               discountAmount: 0,
               advAdjt: 0,
               netAmount,
-            }, pymtStatus, "VERIFIED"),
+            }, pymtStatus, "UNVERIFIED"),
           });
           inserted++;
         }
@@ -460,21 +460,24 @@ const importOPDetailReport = async (req, res) => {
           createdBy: req.user?.username || null,
         };
 
-        const updateResult = await prisma.incomeDtl.updateMany({
-          where: {
-            incomeTxnId: incomeTxn.id,
-            uhid: detailData.uhid,
-            description: detailData.description,
-            amount: detailData.amount,
-            billDate: detailData.billDate,
-          },
-          data: {
-            createdBy: detailData.createdBy,
-          },
+        const existingDtl = await prisma.incomeDtl.findFirst({
+          where: { incomeTxnId: incomeTxn.id, description: detailData.description },
         });
 
-        if (updateResult.count === 0) {
+        if (existingDtl) {
+          await prisma.incomeDtl.update({
+            where: { id: existingDtl.id },
+            data: {
+              uhid: detailData.uhid,
+              amount: detailData.amount,
+              billDate: detailData.billDate,
+              createdBy: detailData.createdBy,
+            },
+          });
+          updated++;
+        } else {
           await prisma.incomeDtl.create({ data: detailData });
+          inserted++;
         }
 
         let partyId = null;
@@ -482,46 +485,40 @@ const importOPDetailReport = async (req, res) => {
           const matchedId = doctorByDesc[description.toLowerCase()];
           if (matchedId) {
             partyId = matchedId;
-          } else {
-            skipped++;
-            continue;
           }
-        } else {
-          skipped++;
-          continue;
         }
 
-        const patientName = incomeTxn.patient?.patientName || null;
+        if (partyId) {
+          const name = incomeTxn.patient?.name || null;
+          const dueDate = billDate ? addDays(billDate, 15) : null;
 
-        const dueDate = billDate ? addDays(billDate, 15) : null;
-
-        const existingPayable = await prisma.payable.findFirst({
-          where: { incomeTxnId: incomeTxn.id, partyId, billedAmt: amount, remarks: patientName },
-        });
-
-        if (existingPayable) {
-          await prisma.payable.update({
-            where: { id: existingPayable.id },
-            data: { billDate: toDateOnly(billDate) || new Date(), dueDate: toDateOnly(dueDate) },
+          const existingPayable = await prisma.payable.findFirst({
+            where: { incomeTxnId: incomeTxn.id, partyId, billedAmt: amount, remarks: name },
           });
-          updated++;
-        } else {
-          await prisma.payable.create({
-            data: {
-              payableType: "DOCTOR",
-              doctor: { connect: { id: partyId } },
-              incomeTxn: { connect: { id: incomeTxn.id } },
-              billDate: toDateOnly(billDate) || new Date(),
-              dueDate: toDateOnly(dueDate),
-              billedAmt: amount,
-              payableAmt: null,
-              balanceAmt: amount,
-              status: "PENDING",
-              remarks: patientName,
-              createdBy: req.user?.username || null,
-            },
-          });
-          inserted++;
+
+          if (existingPayable) {
+            await prisma.payable.update({
+              where: { id: existingPayable.id },
+              data: { billDate: toDateOnly(billDate) || new Date(), dueDate: toDateOnly(dueDate) },
+            });
+            updated++;
+          } else {
+            await prisma.payable.create({
+              data: {
+                partyType: "DOCTOR",
+                doctor: { connect: { id: partyId } },
+                incomeTxn: { connect: { id: incomeTxn.id } },
+                billDate: toDateOnly(billDate) || new Date(),
+                dueDate: toDateOnly(dueDate),
+                billedAmt: amount,
+                payableAmt: null,
+                balanceAmt: amount,
+                status: "PENDING",
+                remarks: name,
+                createdBy: req.user?.username || null,
+              },
+            });
+          }
         }
       } catch (err) {
         failed++;
@@ -692,8 +689,8 @@ const getIncomeTxns = async (req, res) => {
       andConditions.push({
         OR: [
           { billNo: { contains: search, mode: "insensitive" } },
-          { patient: { patientName: { contains: search, mode: "insensitive" } } },
-          { patient: { uhidNo: { contains: search, mode: "insensitive" } } },
+          { patient: { name: { contains: search, mode: "insensitive" } } },
+          { patient: { uhid: { contains: search, mode: "insensitive" } } },
         ],
       });
     }
@@ -748,7 +745,7 @@ const getIncomeTxns = async (req, res) => {
         take: parseInt(limit),
         orderBy: { billDate: "desc" },
         include: {
-          patient: { select: { id: true, patientName: true, uhidNo: true, mobileNo: true } },
+          patient: { select: { id: true, name: true, uhid: true, mobileNo: true } },
           rcvdPymts: { include: { paymentMode: true } },
           payables: { include: { doctor: true } },
         },
@@ -806,7 +803,7 @@ const getPayables = async (req, res) => {
             select: {
               id: true,
               billNo: true,
-              patient: { select: { id: true, patientName: true, uhidNo: true } },
+              patient: { select: { id: true, name: true, uhid: true } },
             },
           },
         },
@@ -847,7 +844,7 @@ const getDoctorPayableSummary = async (req, res) => {
       select: {
         partyId: true,
         balanceAmt: true,
-        incomeTxn: { select: { patient: { select: { patientName: true } } } },
+        incomeTxn: { select: { patient: { select: { name: true } } } },
       },
     });
 
@@ -857,7 +854,7 @@ const getDoctorPayableSummary = async (req, res) => {
       if (!doctorTotals[p.partyId]) doctorTotals[p.partyId] = { count: 0, total: 0, patients: [] };
       doctorTotals[p.partyId].count++;
       doctorTotals[p.partyId].total += parseFloat(String(p.balanceAmt)) || 0;
-      const name = p.incomeTxn?.patient?.patientName;
+      const name = p.incomeTxn?.patient?.name;
       if (name && !doctorTotals[p.partyId].patients.includes(name)) {
         doctorTotals[p.partyId].patients.push(name);
       }
@@ -893,6 +890,7 @@ const getIncomeTxnDetail = async (req, res) => {
         patient: true,
         incomeSource: true,
         rcvdPymts: { include: { paymentMode: true } },
+        receivables: true,
         payables: { include: { doctor: true } },
       },
     });
@@ -911,7 +909,6 @@ const updateIncomeTxnError = async (req, res) => {
 
     const txn = await prisma.incomeTxn.findUnique({ where: { id: parseInt(id) } });
     if (!txn) return res.status(404).json({ message: "Transaction not found" });
-    if ((HAS_TXN_STATUS ? txn.txn_status : txn.status) !== "ERROR") return res.status(400).json({ message: "Only ERROR records can be updated" });
 
     const data = {};
     if (pymt_status && ["FULLYPAID", "PARTIALPAID", "UNPAID"].includes(pymt_status)) {
@@ -933,6 +930,133 @@ const updateIncomeTxnError = async (req, res) => {
   }
 };
 
+const updateIncomeTxnFull = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const txnId = parseInt(id);
+    const { grossAmount, discountAmount, netAmount, errorReason, payables, payments } = req.body;
+
+    const txn = await prisma.incomeTxn.findUnique({
+      where: { id: txnId },
+      include: { patient: true },
+    });
+    if (!txn) return res.status(404).json({ message: "Transaction not found" });
+
+    const gross = parseFloat(grossAmount) || 0;
+    const discount = parseFloat(discountAmount) || 0;
+    const net = parseFloat(netAmount) || 0;
+
+    const data = {};
+    data.grossAmount = gross;
+    data.discountAmount = discount;
+    data.advAdjt = 0;
+    data.netAmount = net;
+    data.errorReason = errorReason || null;
+
+    const creditMode = await prisma.paymentMode.findFirst({ where: { code: "CREDIT" } });
+    const creditModeId = creditMode?.id;
+
+    // Delete existing records before recreating
+    await prisma.rcvdPymt.deleteMany({ where: { incomeTxnId: txnId } });
+    await prisma.receivable.deleteMany({ where: { incomeTxnId: txnId } });
+    await prisma.payable.deleteMany({ where: { incomeTxnId: txnId } });
+
+    // Process payments
+    let nonCreditTotal = 0;
+    if (Array.isArray(payments)) {
+      for (const pmt of payments) {
+        if (!pmt.paymentModeId || !pmt.amount) continue;
+        const pmtModeId = parseInt(pmt.paymentModeId);
+        const pmtAmount = parseFloat(pmt.amount) || 0;
+
+        if (creditModeId && pmtModeId === creditModeId) {
+          const dueDate = pmt.paymentDate || null;
+          await prisma.receivable.create({
+            data: {
+              arType: "PATIENT",
+              patId: txn.patientId,
+              incomeTxnId: txnId,
+              billDate: txn.billDate || new Date(),
+              dueDate: dueDate ? new Date(dueDate) : null,
+              dueAmt: pmtAmount,
+              balanceAmt: pmtAmount,
+              status: "PENDING",
+            },
+          });
+        } else {
+          nonCreditTotal += pmtAmount;
+          await prisma.rcvdPymt.create({
+            data: {
+              incomeTxnId: txnId,
+              paymentModeId: pmtModeId,
+              amount: pmtAmount,
+              paymentDate: pmt.paymentDate ? new Date(pmt.paymentDate) : null,
+            },
+          });
+        }
+      }
+    }
+
+    // Process payables
+    if (Array.isArray(payables)) {
+      for (const p of payables) {
+        if (!p.doctorId) continue;
+        const doctor = await prisma.doctor.findUnique({ where: { id: parseInt(p.doctorId) } });
+        if (!doctor) continue;
+        const billedAmt = parseFloat(p.billedAmt) || 0;
+        const payableAmt = p.payableAmt !== undefined ? parseFloat(p.payableAmt) || 0 : billedAmt;
+        const dueDate = p.dueDate ? new Date(p.dueDate) : (txn.billDate ? new Date(new Date(txn.billDate).getTime() + 15 * 86400000) : null);
+        await prisma.payable.create({
+          data: {
+            partyType: "DOCTOR",
+            partyId: doctor.id,
+            incomeTxnId: txnId,
+            billDate: txn.billDate || new Date(),
+            dueDate,
+            billedAmt,
+            payableAmt,
+            balanceAmt: payableAmt,
+            status: "PENDING",
+            createdBy: req.user?.username || null,
+          },
+        });
+      }
+    }
+
+    // Determine payment status based on non-Credit payments
+    if (nonCreditTotal >= net) {
+      if (HAS_PYMT_STATUS) data.pymt_status = "FULLYPAID";
+      if (HAS_LEGACY_STATUS) data.status = "FULLYPAID";
+    } else if (nonCreditTotal > 0) {
+      if (HAS_PYMT_STATUS) data.pymt_status = "PARTIALPAID";
+      if (HAS_LEGACY_STATUS) data.status = "PARTIALPAID";
+    } else {
+      if (HAS_PYMT_STATUS) data.pymt_status = "UNPAID";
+      if (HAS_LEGACY_STATUS) data.status = "UNPAID";
+    }
+
+    if (HAS_TXN_STATUS) data.txn_status = "VERIFIED";
+
+    await prisma.incomeTxn.update({ where: { id: txnId }, data });
+
+    const updated = await prisma.incomeTxn.findUnique({
+      where: { id: txnId },
+      include: {
+        patient: true,
+        incomeSource: true,
+        rcvdPymts: { include: { paymentMode: true } },
+        receivables: true,
+        payables: { include: { doctor: true } },
+      },
+    });
+
+    res.json(updated);
+  } catch (error) {
+    console.error("UpdateIncomeTxnFull error:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
 const getDoctorPayables = async (req, res) => {
   try {
     const { doctorId } = req.query;
@@ -942,7 +1066,7 @@ const getDoctorPayables = async (req, res) => {
       where: { partyId: parseInt(doctorId), status: { in: ["PENDING", "PARTIALLY_PAID"] } },
       orderBy: { billDate: "desc" },
       include: {
-        incomeTxn: { select: { id: true, billNo: true, patient: { select: { id: true, patientName: true, uhidNo: true } } } },
+        incomeTxn: { select: { id: true, billNo: true, patient: { select: { id: true, name: true, uhid: true } } } },
         pymts: { include: { paymentMode: true } },
       },
     });
@@ -1016,4 +1140,22 @@ const getPaymentModes = async (req, res) => {
   }
 };
 
-module.exports = { importOPBilling, importOPDetailReport, getImportLogs, getImportErrors, getDashboard, getIncomeTxns, getPayables, getDoctorPayableSummary, getIncomeTxnDetail, updateIncomeTxnError, getDoctorPayables, recordPayablePayment, getPaymentModes };
+const bulkVerifyTxns = async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0)
+      return res.status(400).json({ message: "ids array is required" });
+
+    const result = await prisma.incomeTxn.updateMany({
+      where: { id: { in: ids.map(Number) }, incomeSource: { code: "OP" } },
+      data: { txn_status: "VERIFIED" },
+    });
+
+    res.json({ message: `${result.count} transactions verified`, count: result.count });
+  } catch (error) {
+    console.error("BulkVerifyTxns error:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+module.exports = { importOPBilling, importOPDetailReport, getImportLogs, getImportErrors, getDashboard, getIncomeTxns, getPayables, getDoctorPayableSummary, getIncomeTxnDetail, updateIncomeTxnError, updateIncomeTxnFull, getDoctorPayables, recordPayablePayment, getPaymentModes, bulkVerifyTxns };
