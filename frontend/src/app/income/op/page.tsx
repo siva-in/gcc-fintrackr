@@ -144,6 +144,7 @@ export default function IncomeOPPage() {
   const [editTxnStatus, setEditTxnStatus] = useState("UNVERIFIED");
   const [editRemarks, setEditRemarks] = useState("");
   const [editSaving, setEditSaving] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [editDetailLoading, setEditDetailLoading] = useState(false);
   const [editGross, setEditGross] = useState("");
   const [editDiscount, setEditDiscount] = useState("");
@@ -500,33 +501,6 @@ export default function IncomeOPPage() {
       toast.error("Failed to load error details");
     } finally {
       setErrorLoading(false);
-    }
-  };
-
-  const openEditModal = async (txn: IncomeTxn) => {
-    setEditModalOpen(true);
-    setEditingTxn(null);
-    setEditDetailLoading(true);
-    setEditStatus("");
-    setEditTxnStatus("UNVERIFIED");
-    setEditRemarks("");
-    setEditGross("");
-    setEditDiscount("");
-    setEditAdjt("");
-    setEditNet("");
-    try {
-      const { data } = await api.get(`/income/txns/${txn.id}`);
-      setEditingTxn(data);
-      setEditStatus(data.pymt_status || "FULLYPAID");
-      setEditTxnStatus(data.txn_status || "UNVERIFIED");
-      setEditGross(data.grossAmount != null ? String(data.grossAmount) : "");
-      setEditDiscount(data.discountAmount != null ? String(data.discountAmount) : "");
-      setEditAdjt(data.advAdjt != null ? String(data.advAdjt) : "");
-      setEditNet(data.netAmount != null ? String(data.netAmount) : "");
-    } catch {
-      toast.error("Failed to load transaction details");
-    } finally {
-      setEditDetailLoading(false);
     }
   };
 

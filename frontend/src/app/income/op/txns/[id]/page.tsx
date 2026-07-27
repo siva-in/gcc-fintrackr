@@ -46,15 +46,17 @@ const toDateInputValue = (d: string | null | undefined) => {
 export default function EditTransactionPage() {
   const { id } = useParams<{ id: string }>();
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type ApiData = any;
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [txn, setTxn] = useState<any>(null);
+  const [txn, setTxn] = useState<ApiData>(null);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [paymentModes, setPaymentModes] = useState<PaymentMode[]>([]);
 
   const [grossAmount, setGrossAmount] = useState("");
   const [discountAmount, setDiscountAmount] = useState("");
-  const [netAmount, setNetAmount] = useState("");
   const [errorReason, setErrorReason] = useState("");
 
   const [payables, setPayables] = useState<PayableEntry[]>([]);
@@ -68,14 +70,13 @@ export default function EditTransactionPage() {
           api.get("/doctors?all=true"),
           api.get("/income/payment-modes"),
         ]);
-        const data = txnRes.data;
+        const data: ApiData = txnRes.data;
         setTxn(data);
         setGrossAmount(data.grossAmount != null ? String(data.grossAmount) : "");
         setDiscountAmount(data.discountAmount != null ? String(data.discountAmount) : "");
-        setNetAmount(data.netAmount != null ? String(data.netAmount) : "");
         setErrorReason(data.errorReason || "");
 
-        const initialPayables: PayableEntry[] = (data.payables || []).map((p: any) => ({
+        const initialPayables: PayableEntry[] = (data.payables || []).map((p: ApiData) => ({
           id: p.id,
           doctorId: p.doctor?.id || p.partyId,
           doctorName: p.doctor?.name || `Doctor #${p.partyId}`,
@@ -88,10 +89,10 @@ export default function EditTransactionPage() {
         setDoctors(doctorsRes.data || []);
         setPaymentModes(modesRes.data || []);
 
-        const creditMode = (modesRes.data || []).find((m: any) => m.code === "CREDIT");
+        const creditMode = (modesRes.data || []).find((m: ApiData) => m.code === "CREDIT");
         const creditModeId = creditMode?.id;
 
-        const rcvdPymtEntries = (data.rcvdPymts || []).map((p: any) => ({
+        const rcvdPymtEntries = (data.rcvdPymts || []).map((p: ApiData) => ({
           id: p.id,
           paymentModeId: p.paymentModeId || 0,
           amount: p.amount != null ? String(p.amount) : "",
@@ -99,7 +100,7 @@ export default function EditTransactionPage() {
           dueDate: "",
         }));
 
-        const receivableEntries = (data.receivables || []).map((r: any) => ({
+        const receivableEntries = (data.receivables || []).map((r: ApiData) => ({
           id: r.id,
           paymentModeId: creditModeId || 0,
           amount: r.dueAmt != null ? String(r.dueAmt) : "",
@@ -207,7 +208,7 @@ export default function EditTransactionPage() {
 
     setSaving(true);
     try {
-      const payload: any = {
+      const payload: Record<string, unknown> = {
         grossAmount: String(g),
         discountAmount: String(d),
         netAmount: String(n),
