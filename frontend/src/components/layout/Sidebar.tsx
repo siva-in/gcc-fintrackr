@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuthStore } from "@/stores/authStore";
 import { useState } from "react";
-import { LayoutDashboard, Users, Building2, FileText, CheckCircle, Shield, Settings, Stethoscope, UserRound, X, ChevronLeft, ChevronDown, Wallet, Handshake } from "lucide-react";
+import { LayoutDashboard, Users, Building2, FileText, CheckCircle, Shield, Settings, Stethoscope, UserRound, X, ChevronLeft, ChevronDown, Wallet, Handshake, Sliders } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 interface NavItem {
@@ -23,6 +23,7 @@ const companyNavItems: NavItem[] = [
   { href: "/doctors", label: "Doctors", icon: Stethoscope },
   { href: "/patients", label: "Patients", icon: UserRound },
   { href: "/business-partners", label: "Business Partners", icon: Handshake },
+  { href: "/configs", label: "Config Master", icon: Sliders },
   {
     href: "/income",
     label: "Income",

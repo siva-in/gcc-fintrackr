@@ -3,19 +3,19 @@ const { prisma } = require("../middleware/auth");
 
 const getBizPartners = async (req, res) => {
   try {
-    const { page = 1, limit = 20, search = "" } = req.query;
+    const { page = 1, limit = 20, search = "", bpType } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    const where = search
-      ? {
-          OR: [
-            { bpName: { contains: search, mode: "insensitive" } },
-            { contactName: { contains: search, mode: "insensitive" } },
-            { mobile: { contains: search, mode: "insensitive" } },
-            { email: { contains: search, mode: "insensitive" } },
-          ],
-        }
-      : {};
+    const where = {};
+    if (search) {
+      where.OR = [
+        { bpName: { contains: search, mode: "insensitive" } },
+        { contactName: { contains: search, mode: "insensitive" } },
+        { mobile: { contains: search, mode: "insensitive" } },
+        { email: { contains: search, mode: "insensitive" } },
+      ];
+    }
+    if (bpType) where.bpType = bpType;
 
     const [bizPartners, total] = await Promise.all([
       prisma.bizPartner.findMany({

@@ -41,29 +41,14 @@ interface PayableItem {
   description: string;
   billedAmt: number;
   payableAmt: string;
+  partyType: string;
   doctorId: string;
   doctorName: string;
+  bizPartnerId: string;
+  bizPartnerName: string;
   isOptional: boolean;
   isSelected: boolean;
 }
-
-const PAYABLE_DESCRIPTIONS = ["DOCTORS", "DOCTOR CONSULTATION", "SURGEON FEE", "ANESTHESIOLOGY TEAM CHARGES", "ASSISTANT SURGEON CHARGES - 1"];
-const DEFAULT_PAYABLE_VISIBLE_DESCRIPTIONS = [
-  "ANESTHESIOLOGY TEAM CHARGES",
-  "ASSISTANT SURGEON CHARGES - 1",
-  "CONSULTATION CHARGES",
-  "DMO CHARGES",
-  "DOCTOR CONSULTATION SPECIALITY",
-  "PRE OPERATIVE ASSESMENT - ANAESTHETIST - IP",
-  "SURGEON FEE",
-];
-
-const isPriorityPayableDescription = (description: string) => {
-  const upper = (description || "").toUpperCase().trim();
-  if (upper.startsWith("DR.")) return true;
-  if (upper.startsWith("DR ")) return true;
-  return DEFAULT_PAYABLE_VISIBLE_DESCRIPTIONS.some((d) => upper.includes(d));
-};
 
 function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
@@ -78,13 +63,35 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
   const [pymts, setPymts] = useState<{ paymentModeId: string; amount: string; paymentDate: string; insurancePartnerId: string; insurancePartnerName: string }[]>([]);
   const [payableItems, setPayableItems] = useState<PayableItem[]>([]);
   const [doctorsList, setDoctorsList] = useState<{ id: number; name: string }[]>([]);
+  const [vendorsList, setVendorsList] = useState<{ id: number; bpName: string }[]>([]);
   const [paymentModes, setPaymentModes] = useState<{ id: number; code: string; name: string }[]>([]);
   const [insurancePartners, setInsurancePartners] = useState<{ id: number; bpName: string }[]>([]);
+  const [ipFilterConfigs, setIpFilterConfigs] = useState<{ code: string; value: string }[]>([]);
   const doctorSuggestionsId = "ip-review-doctor-suggestions";
   const insuranceSuggestionsId = "ip-review-insurance-suggestions";
 
   const normalizeName = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
   const stripDrPrefix = (value: string) => value.replace(/^dr[.\s:-]*/i, "").trim();
+
+  const matchIpFilter = (description: string, configs = ipFilterConfigs) => {
+    const upper = (description || "").toUpperCase().trim();
+    for (const cfg of configs) {
+      if (upper.startsWith(cfg.code) || upper.includes(cfg.code)) return cfg;
+    }
+    return null;
+  };
+
+  const getPartyTypesFromConfig = (matched: { code: string; value: string } | null): string[] => {
+    if (!matched) return [];
+    return matched.value.split(",").map((s) => s.trim()).filter(Boolean);
+  };
+
+  const isPriorityPayableDescription = (description: string) => {
+    const upper = (description || "").toUpperCase().trim();
+    if (upper.startsWith("DR.")) return true;
+    if (upper.startsWith("DR ")) return true;
+    return !!matchIpFilter(description);
+  };
 
   const getDoctorFromDescription = (description: string, sourceDoctors = doctorsList) => {
     const match = description.trim().match(/^dr[.\s:-]*(.+)$/i);
@@ -130,7 +137,7 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
     return `/income/ip?${params.toString()}`;
   };
 
-  async function fetchTxnDetails(sourceDoctors = doctorsList) {
+  async function fetchTxnDetails(sourceDoctors = doctorsList, filterConfigs = ipFilterConfigs) {
     setLoading(true);
     try {
       const { data } = await api.get(`/income/ip/txns/${id}`);
@@ -172,27 +179,31 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
 
       if (data.incomeDtls && data.incomeDtls.length > 0) {
         const items: PayableItem[] = data.incomeDtls.map((dtl: IncomeDtl) => {
-          const desc = (dtl.description || "").toUpperCase();
-          const isPayableType = PAYABLE_DESCRIPTIONS.some(pd => desc.includes(pd));
-          const isOptional = desc.includes("ASSISTANT SURGEON");
+          const matched = matchIpFilter(dtl.description || "", filterConfigs);
+          const partyTypes = getPartyTypesFromConfig(matched);
+          const isPayableType = partyTypes.includes("DOCTOR");
+          const isOptional = !!(matched && matched.value === "DOCTOR, VENDOR");
+          const defaultPartyType = partyTypes.includes("DOCTOR") ? "DOCTOR" : partyTypes.includes("VENDOR") ? "VENDOR" : "";
           const parsedDoctor = getDoctorFromDescription(dtl.description || "", sourceDoctors);
           return {
             payableId: undefined,
             description: dtl.description || "",
             billedAmt: Number(dtl.amount) || 0,
             payableAmt: "",
+            partyType: defaultPartyType,
             doctorId: parsedDoctor?.doctorId || "",
             doctorName: parsedDoctor?.doctorName || "",
+            bizPartnerId: "",
+            bizPartnerName: "",
             isOptional,
             isSelected: isPayableType && !isOptional,
           };
         });
 
-        const savedPayables = (data.payables || []) as { id: number; billedAmt: number; payableAmt: number | null; doctor: { id: number; name: string } | null }[];
+        const savedPayables = (data.payables || []) as { id: number; billedAmt: number; payableAmt: number | null; doctor: { id: number; name: string } | null; bizPartner: { id: number; bpName: string } | null }[];
         const usedIndexes = new Set<number>();
         const isPreferredRow = (item: PayableItem) => {
-          const upper = item.description.toUpperCase();
-          return PAYABLE_DESCRIPTIONS.some((pd) => upper.includes(pd)) || /^DR[.\s:-]/i.test(item.description);
+          return !!matchIpFilter(item.description, filterConfigs) || /^DR[.\s:-]/i.test(item.description);
         };
 
         const findRowIndexForPayable = (payable: { billedAmt: number }) => {
@@ -211,8 +222,14 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
           items[idx].payableId = payable.id;
           items[idx].payableAmt = payable.payableAmt != null ? String(payable.payableAmt) : "";
           if (payable.doctor?.id) {
+            items[idx].partyType = "DOCTOR";
             items[idx].doctorId = String(payable.doctor.id);
             items[idx].doctorName = payable.doctor.name;
+          }
+          if (payable.bizPartner?.id) {
+            items[idx].partyType = "VENDOR";
+            items[idx].bizPartnerId = String(payable.bizPartner.id);
+            items[idx].bizPartnerName = payable.bizPartner.bpName;
           }
         }
 
@@ -241,6 +258,15 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
     return [];
   }
 
+  async function fetchVendorsList() {
+    try {
+      const { data } = await api.get("/biz-partners?bpType=VENDOR&limit=9999");
+      setVendorsList(data.bizPartners || []);
+      return data.bizPartners || [];
+    } catch { /* ignore */ }
+    return [];
+  }
+
   async function fetchPaymentModes() {
     try {
       const { data } = await api.get("/income/ip/payment-modes");
@@ -255,11 +281,22 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
     } catch { /* ignore */ }
   }
 
+  async function fetchIpFilterConfigs() {
+    try {
+      const { data } = await api.get("/config/category/IP_FILTER");
+      setIpFilterConfigs(data || []);
+      return data || [];
+    } catch { /* ignore */ }
+    return [];
+  }
+
   useEffect(() => {
     const init = async () => {
       const doctors = await fetchDoctorsList();
+      const configs = await fetchIpFilterConfigs();
+      await fetchVendorsList();
       await Promise.all([fetchPaymentModes(), fetchInsurancePartners()]);
-      await fetchTxnDetails(doctors);
+      await fetchTxnDetails(doctors, configs);
     };
     init();
   }, [id]);
@@ -295,9 +332,35 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
 
   const updatePayableDoctorByName = (index: number, inputName: string) => {
     const updated = [...payableItems];
-    const selectedDoctor = doctorsList.find((d) => d.name.toLowerCase() === inputName.trim().toLowerCase());
-    updated[index].doctorName = inputName;
-    updated[index].doctorId = selectedDoctor ? String(selectedDoctor.id) : "";
+    const item = updated[index];
+    const partyTypes = getPartyTypesFromConfig(matchIpFilter(item.description));
+    const matchedDoctor = doctorsList.find((d) => d.name.toLowerCase() === inputName.trim().toLowerCase());
+    const matchedVendor = vendorsList.find((v) => v.bpName.toLowerCase() === inputName.trim().toLowerCase());
+    if (matchedDoctor && partyTypes.includes("DOCTOR")) {
+      item.partyType = "DOCTOR";
+      item.doctorName = matchedDoctor.name;
+      item.doctorId = String(matchedDoctor.id);
+      item.bizPartnerId = "";
+      item.bizPartnerName = "";
+    } else if (matchedVendor && partyTypes.includes("VENDOR")) {
+      item.partyType = "VENDOR";
+      item.bizPartnerName = matchedVendor.bpName;
+      item.bizPartnerId = String(matchedVendor.id);
+      item.doctorId = "";
+      item.doctorName = "";
+    } else if (partyTypes.includes("DOCTOR")) {
+      item.partyType = "DOCTOR";
+      item.doctorName = inputName;
+      item.doctorId = "";
+      item.bizPartnerId = "";
+      item.bizPartnerName = "";
+    } else if (partyTypes.includes("VENDOR")) {
+      item.partyType = "VENDOR";
+      item.bizPartnerName = inputName;
+      item.bizPartnerId = "";
+      item.doctorId = "";
+      item.doctorName = "";
+    }
     setPayableItems(updated);
   };
 
@@ -307,6 +370,15 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
   };
 
   const isDefaultVisiblePayableDescription = (description: string) => isPriorityPayableDescription(description);
+
+  const getSuggestionListId = (index: number) => {
+    const item = payableItems[index];
+    if (!item) return "";
+    const partyTypes = getPartyTypesFromConfig(matchIpFilter(item.description));
+    if (partyTypes.includes("DOCTOR") && partyTypes.includes("VENDOR")) return "ip-review-combined-suggestions";
+    if (partyTypes.includes("VENDOR")) return "ip-review-vendor-suggestions";
+    return doctorSuggestionsId;
+  };
 
   const updateInsurancePartnerByName = (index: number, inputName: string) => {
     const updated = [...pymts];
@@ -336,7 +408,9 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
           description: item.description,
           billedAmt: item.billedAmt,
           payableAmt: item.payableAmt,
-          doctorId: item.doctorId || null,
+          partyType: item.partyType || "DOCTOR",
+          doctorId: item.partyType === "DOCTOR" ? item.doctorId || null : null,
+          bizPartnerId: item.partyType === "VENDOR" ? item.bizPartnerId || null : null,
           name: txn.patient?.name || null,
           isOptional: item.isOptional,
         }));
@@ -553,7 +627,7 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
                       <th className="px-4 py-3 w-10"></th>
                       <th className="text-left px-4 py-3 font-semibold text-slate-500 text-xs uppercase tracking-wider">Description</th>
                       <th className="text-right px-4 py-3 font-semibold text-slate-500 text-xs uppercase tracking-wider">Billed Amount</th>
-                      <th className="text-left px-4 py-3 font-semibold text-slate-500 text-xs uppercase tracking-wider">Doctor</th>
+                      <th className="text-left px-4 py-3 font-semibold text-slate-500 text-xs uppercase tracking-wider">Doctor / Vendor</th>
                       <th className="text-right px-4 py-3 font-semibold text-slate-500 text-xs uppercase tracking-wider">Payable Amount</th>
                     </tr>
                   </thead>
@@ -569,11 +643,15 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
                             onChange={(e) => {
                               const updated = [...payableItems];
                               updated[idx].isSelected = e.target.checked;
-                              if (e.target.checked && !updated[idx].doctorId && /^dr[.\s:-]/i.test(updated[idx].description || "")) {
-                                const parsedDoctor = getDoctorFromDescription(updated[idx].description || "", doctorsList);
-                                if (parsedDoctor) {
-                                  updated[idx].doctorId = parsedDoctor.doctorId;
-                                  updated[idx].doctorName = parsedDoctor.doctorName;
+                              if (e.target.checked) {
+                                const partyTypes = getPartyTypesFromConfig(matchIpFilter(updated[idx].description));
+                                if (partyTypes.includes("DOCTOR") && /^dr[.\s:-]/i.test(updated[idx].description || "")) {
+                                  const parsedDoctor = getDoctorFromDescription(updated[idx].description || "", doctorsList);
+                                  if (parsedDoctor) {
+                                    updated[idx].partyType = "DOCTOR";
+                                    updated[idx].doctorId = parsedDoctor.doctorId;
+                                    updated[idx].doctorName = parsedDoctor.doctorName;
+                                  }
                                 }
                               }
                               setPayableItems(updated);
@@ -593,14 +671,20 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
                             <div>
                               <input
                                 type="text"
-                                list={doctorSuggestionsId}
-                                value={item.doctorName}
+                                list={getSuggestionListId(idx)}
+                                value={item.partyType === "VENDOR" ? item.bizPartnerName : item.doctorName}
                                 onChange={(e) => updatePayableDoctorByName(idx, e.target.value)}
-                                placeholder="Type doctor name..."
+                                placeholder={item.partyType === "VENDOR" ? "Type vendor name..." : "Type doctor name..."}
                                 className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                               />
-                              {!item.doctorId && item.doctorName.trim() && (
-                                <p className="text-[10px] text-amber-600 mt-1">Select a doctor from suggestions</p>
+                              {item.partyType === "VENDOR" ? (
+                                !item.bizPartnerId && item.bizPartnerName.trim() && (
+                                  <p className="text-[10px] text-amber-600 mt-1">Select a vendor from suggestions</p>
+                                )
+                              ) : (
+                                !item.doctorId && item.doctorName.trim() && (
+                                  <p className="text-[10px] text-amber-600 mt-1">Select a doctor from suggestions</p>
+                                )
                               )}
                             </div>
                           ) : (
@@ -640,6 +724,19 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
               <datalist id={doctorSuggestionsId}>
                 {doctorsList.map((d) => (
                   <option key={d.id} value={d.name} />
+                ))}
+              </datalist>
+              <datalist id="ip-review-vendor-suggestions">
+                {vendorsList.map((v) => (
+                  <option key={v.id} value={v.bpName} />
+                ))}
+              </datalist>
+              <datalist id="ip-review-combined-suggestions">
+                {doctorsList.map((d) => (
+                  <option key={d.id} value={d.name} />
+                ))}
+                {vendorsList.map((v) => (
+                  <option key={v.id} value={v.bpName} />
                 ))}
               </datalist>
               <datalist id={insuranceSuggestionsId}>

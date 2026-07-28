@@ -45,6 +45,21 @@ const INSURANCE_BIZ_PARTNERS = [
 
 const VENDOR_BIZ_PARTNERS = [{ bpName: "Siva Neuro Diagnostics", mobile: "8883069610" }];
 
+const IP_FILTER_CONFIGS = [
+  { code: "DR.", value: "DOCTOR" },
+  { code: "SURGEON FEE", value: "DOCTOR" },
+  { code: "ANESTHESIOLOGY TEAM CHARGES", value: "DOCTOR" },
+  { code: "ASSISTANT SURGEON CHARGES - 1", value: "DOCTOR" },
+  { code: "CONSULTATION CHARGES", value: "DOCTOR" },
+  { code: "DOCTOR CONSULTATION SPECIALITY", value: "DOCTOR" },
+  { code: "CARDIOLOGIST  CONSULTATION", value: "DOCTOR" },
+  { code: "COUNSELLING", value: "DOCTOR" },
+  { code: "SLEEP STUDY", value: "VENDOR" },
+  { code: "DMO", value: "DOCTOR" },
+  { code: "EEG", value: "VENDOR" },
+  { code: "Implant", value: "DOCTOR, VENDOR" },
+];
+
 async function seedIncomeSources(runner) {
   for (const { code, name } of INCOME_SOURCES) {
     const existing = await runner.incomeSource.findFirst({ where: { code } });
@@ -119,6 +134,19 @@ async function createOrgRoles(runner) {
   }
 }
 
+async function seedConfigMaster(runner) {
+  for (const { code, value } of IP_FILTER_CONFIGS) {
+    const existing = await runner.configMaster.findFirst({
+      where: { category: "IP_FILTER", code },
+    });
+    if (!existing) {
+      await runner.configMaster.create({
+        data: { category: "IP_FILTER", code, value },
+      });
+    }
+  }
+}
+
 async function main() {
   const name = "siva";
   const existingAdmin = await prisma.user.findUnique({
@@ -164,6 +192,7 @@ async function main() {
   await seedPaymentModes(prisma);
   await seedInsuranceBizPartners(prisma);
   await seedVendorBizPartners(prisma);
+  await seedConfigMaster(prisma);
 }
 
 main()

@@ -240,6 +240,22 @@ enum PayableStatus {
   CANCELLED
 }
 
+enum ConfigCategory {
+  IP_FILTER
+}
+
+model ConfigMaster {
+  id       Int            @id @default(autoincrement())
+  category ConfigCategory
+  code     String         @db.VarChar(100)
+  value    String         @db.VarChar(500)
+  createdAt DateTime       @default(now()) @map("created_at")
+  updatedAt DateTime       @updatedAt @map("updated_at")
+
+  @@unique([category, code])
+  @@map("config_master")
+}
+
 model IncomeSource {
   id       Int     @id @default(autoincrement())
   code     String  @unique @db.VarChar(20)
@@ -315,9 +331,10 @@ model RcvdPymt {
 }
 
 model Payable {
-  id          Int           @id @default(autoincrement())
-  partyType PartyType @map("party_type")
-  partyId     Int
+  id            Int           @id @default(autoincrement())
+  partyType     PartyType     @map("party_type")
+  drId        Int?          @map("party_id")
+  bpId        Int?          @map("biz_partner_id")
   incomeTxnId Int
   billDate    DateTime      @db.Date
   dueDate     DateTime?     @db.Date
@@ -331,11 +348,13 @@ model Payable {
   updatedAt   DateTime      @updatedAt
 
   incomeTxn IncomeTxn     @relation(fields: [incomeTxnId], references: [id], onDelete: Cascade)
-  doctor    Doctor?       @relation(fields: [partyId], references: [id])
+  doctor    Doctor?       @relation(fields: [drId], references: [id])
+  bizPartner BizPartner?  @relation(fields: [bpId], references: [id])
   pymts     PayablePymt[]
 
   @@index([incomeTxnId])
-  @@index([partyId])
+  @@index([drId])
+  @@index([bpId])
   @@map("payable")
 }
 
@@ -387,6 +406,7 @@ model BizPartner {
   createdAt   DateTime   @default(now()) @map("created_at")
 
   receivables Receivable[]
+  payables    Payable[]
 
   @@map("biz_partner")
 }

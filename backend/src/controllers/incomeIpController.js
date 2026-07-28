@@ -501,7 +501,7 @@ const getIPTxns = async (req, res) => {
     }
 
     if (doctorId) {
-      andConditions.push({ payables: { some: { partyId: parseInt(doctorId) } } });
+      andConditions.push({ payables: { some: { drId: parseInt(doctorId) } } });
     }
 
     const paymentStatuses = ["FULLYPAID", "PARTIALPAID", "UNPAID"];
@@ -561,7 +561,7 @@ const getIPTxnDetail = async (req, res) => {
         patient: true,
         incomeSource: true,
         rcvdPymts: { include: { paymentMode: true } },
-        payables: { include: { doctor: true } },
+        payables: { include: { doctor: true, bizPartner: true } },
         incomeDtls: true,
         receivables: { include: { bizPartner: true }, orderBy: { id: "asc" } },
       },
@@ -710,48 +710,63 @@ const reviewIPTxn = async (req, res) => {
         if (payAmt <= 0) continue;
 
         const billedAmt = parseFloat(pay.billedAmt) || payAmt;
-        const partyId = pay.doctorId ? parseInt(pay.doctorId) : null;
+        const partyType = pay.partyType || "DOCTOR";
+        const doctorId = pay.doctorId ? parseInt(pay.doctorId) : null;
+        const bizPartnerId = pay.bizPartnerId ? parseInt(pay.bizPartnerId) : null;
 
         // Validate payable amount <= billed amount
         if (payAmt > billedAmt) continue;
 
-        // Skip if no doctor ID provided (except for optional items)
-        if (!partyId && !pay.isOptional) continue;
+        // Skip if no party ID provided (except for optional items)
+        if (!doctorId && !bizPartnerId && !pay.isOptional) continue;
+        if (pay.isOptional && !doctorId && !bizPartnerId) continue;
 
-        // If optional item and no doctor selected, skip
-        if (pay.isOptional && !partyId) continue;
+        const baseData = {
+          partyType,
+          incomeTxn: { connect: { id: parseInt(id) } },
+          billDate: txn.billDate || new Date(),
+          dueDate: txn.billDate ? new Date(`${addDays(txn.billDate.toISOString().split("T")[0], 15)}T00:00:00.000Z`) : null,
+          billedAmt,
+          payableAmt: payAmt,
+          balanceAmt: billedAmt - payAmt,
+          status: payAmt >= billedAmt ? "PAID" : "PARTIALLY_PAID",
+          remarks: pay.name || null,
+          createdBy: req.user?.username || null,
+        };
 
         const existingPayable = pay.payableId
           ? await prisma.payable.findFirst({ where: { id: parseInt(pay.payableId), incomeTxnId: parseInt(id) } })
           : await prisma.payable.findFirst({
-              where: { incomeTxnId: parseInt(id), partyId, billedAmt, remarks: pay.name || null },
+              where: { incomeTxnId: parseInt(id), partyType, billedAmt, remarks: pay.name || null },
             });
 
         if (existingPayable) {
+          const updateData = {
+            partyType,
+            payableAmt: payAmt,
+            balanceAmt: billedAmt - payAmt,
+            status: payAmt >= billedAmt ? "PAID" : "PARTIALLY_PAID",
+            drId: partyType === "DOCTOR" ? doctorId : null,
+            bpId: partyType === "VENDOR" ? bizPartnerId : null,
+          };
           const updatedPayable = await prisma.payable.update({
             where: { id: existingPayable.id },
-            data: {
-              partyId,
-              payableAmt: payAmt,
-              balanceAmt: billedAmt - payAmt,
-              status: payAmt >= billedAmt ? "PAID" : "PARTIALLY_PAID",
-            },
+            data: updateData,
           });
           keptPayableIds.push(updatedPayable.id);
-        } else {
+        } else if (partyType === "DOCTOR") {
           const createdPayable = await prisma.payable.create({
             data: {
-              partyType: "DOCTOR",
-              doctor: { connect: { id: partyId } },
-              incomeTxn: { connect: { id: parseInt(id) } },
-              billDate: txn.billDate || new Date(),
-              dueDate: txn.billDate ? new Date(`${addDays(txn.billDate.toISOString().split("T")[0], 15)}T00:00:00.000Z`) : null,
-              billedAmt,
-              payableAmt: payAmt,
-              balanceAmt: billedAmt - payAmt,
-              status: payAmt >= billedAmt ? "PAID" : "PARTIALLY_PAID",
-              remarks: pay.name || null,
-              createdBy: req.user?.username || null,
+              ...baseData,
+              doctor: { connect: { id: doctorId } },
+            },
+          });
+          keptPayableIds.push(createdPayable.id);
+        } else if (partyType === "VENDOR") {
+          const createdPayable = await prisma.payable.create({
+            data: {
+              ...baseData,
+              bizPartner: { connect: { id: bizPartnerId } },
             },
           });
           keptPayableIds.push(createdPayable.id);
@@ -761,7 +776,6 @@ const reviewIPTxn = async (req, res) => {
       await prisma.payable.deleteMany({
         where: {
           incomeTxnId: parseInt(id),
-          partyType: "DOCTOR",
           id: { notIn: keptPayableIds.length > 0 ? keptPayableIds : [0] },
         },
       });
@@ -794,17 +808,17 @@ const getIPDoctorSummary = async (req, res) => {
 
     const payables = await prisma.payable.findMany({
       where,
-      select: { partyId: true, balanceAmt: true, incomeTxn: { select: { patient: { select: { name: true } } } } },
+      select: { drId: true, balanceAmt: true, incomeTxn: { select: { patient: { select: { name: true } } } } },
     });
 
     const doctorTotals = {};
     for (const p of payables) {
-      if (!p.partyId) continue;
-      if (!doctorTotals[p.partyId]) doctorTotals[p.partyId] = { count: 0, total: 0, patients: [] };
-      doctorTotals[p.partyId].count++;
-      doctorTotals[p.partyId].total += parseFloat(String(p.balanceAmt)) || 0;
+      if (!p.drId) continue;
+      if (!doctorTotals[p.drId]) doctorTotals[p.drId] = { count: 0, total: 0, patients: [] };
+      doctorTotals[p.drId].count++;
+      doctorTotals[p.drId].total += parseFloat(String(p.balanceAmt)) || 0;
       const name = p.incomeTxn?.patient?.name;
-      if (name && !doctorTotals[p.partyId].patients.includes(name)) doctorTotals[p.partyId].patients.push(name);
+      if (name && !doctorTotals[p.drId].patients.includes(name)) doctorTotals[p.drId].patients.push(name);
     }
 
     const doctorIds = Object.keys(doctorTotals).map(Number);
@@ -836,7 +850,7 @@ const getIPDoctorPayables = async (req, res) => {
     const ipSource = await prisma.incomeSource.findFirst({ where: { code: "IP" } });
 
     const payables = await prisma.payable.findMany({
-      where: { partyId: parseInt(doctorId), status: { in: ["PENDING", "PARTIALLY_PAID"] }, incomeTxn: { incomeSourceId: ipSource?.id } },
+      where: { drId: parseInt(doctorId), status: { in: ["PENDING", "PARTIALLY_PAID"] }, incomeTxn: { incomeSourceId: ipSource?.id } },
       orderBy: { billDate: "desc" },
       include: {
         incomeTxn: { select: { id: true, billNo: true, patient: { select: { id: true, name: true, uhid: true } } } },
