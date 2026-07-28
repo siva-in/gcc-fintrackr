@@ -17,6 +17,7 @@ const incomeIpRoutes = require("./routes/incomeIp");
 const incomeLabRoutes = require("./routes/incomeLab");
 const bizPartnerRoutes = require("./routes/bizPartner");
 const configRoutes = require("./routes/config");
+const reportRoutes = require("./routes/report");
 
 const app = express();
 
@@ -38,6 +39,7 @@ app.use("/api/income/ip", incomeIpRoutes);
 app.use("/api/income/lab", incomeLabRoutes);
 app.use("/api/biz-partners", bizPartnerRoutes);
 app.use("/api/config", configRoutes);
+app.use("/api/reports", reportRoutes);
 
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });

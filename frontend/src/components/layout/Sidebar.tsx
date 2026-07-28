@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuthStore } from "@/stores/authStore";
 import { useState } from "react";
-import { LayoutDashboard, Users, Building2, FileText, CheckCircle, Shield, Settings, Stethoscope, UserRound, X, ChevronLeft, ChevronDown, Wallet, Handshake, Sliders } from "lucide-react";
+import { LayoutDashboard, Users, Building2, FileText, CheckCircle, Shield, Settings, Stethoscope, UserRound, X, ChevronLeft, ChevronDown, Wallet, Handshake, Sliders, BarChart3 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 interface NavItem {
@@ -17,13 +17,14 @@ interface NavItem {
 const companyNavItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/users", label: "Users", icon: Users },
-  { href: "/organizations", label: "Organizations", icon: Building2 },
+  // { href: "/organizations", label: "Organizations", icon: Building2 },
   { href: "/roles", label: "Role Assignment", icon: Shield },
-  { href: "/role-master", label: "Role Master", icon: Settings },
+  // { href: "/role-master", label: "Role Master", icon: Settings },
   { href: "/doctors", label: "Doctors", icon: Stethoscope },
   { href: "/patients", label: "Patients", icon: UserRound },
   { href: "/business-partners", label: "Business Partners", icon: Handshake },
   { href: "/configs", label: "Config Master", icon: Sliders },
+  { href: "/reports", label: "Reports", icon: BarChart3 },
   {
     href: "/income",
     label: "Income",
