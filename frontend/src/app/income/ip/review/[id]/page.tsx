@@ -661,13 +661,7 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
                             }}
                             className="accent-indigo-500"
                           />
-                          ) : (
-                            <input
-                              type="checkbox"
-                              disabled
-                              className="accent-slate-300 cursor-not-allowed"
-                            />
-                          )}
+                          ) : null}
                         </td>
                         <td className="px-4 py-3">
                           <span className="font-medium text-slate-700">{item.description}</span>
