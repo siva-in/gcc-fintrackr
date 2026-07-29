@@ -547,7 +547,7 @@ export default function IncomeLabPage() {
             </div>
           </div>
 
-          <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-6 max-w-lg">
+          <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-6 max-w-2xl">
             <button
               onClick={() => setActiveTab("dashboard")}
               className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === "dashboard" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}

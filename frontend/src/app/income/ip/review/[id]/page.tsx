@@ -369,6 +369,8 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
     return mode?.code || "";
   };
 
+  const isFilterMatch = (description: string) => !!matchIpFilter(description);
+
   const isDefaultVisiblePayableDescription = (description: string) => isPriorityPayableDescription(description);
 
   const getSuggestionListId = (index: number) => {
@@ -637,6 +639,7 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
                       return (
                       <tr key={idx} className={`${item.isSelected ? "bg-indigo-50/30" : ""} ${item.isOptional ? "bg-amber-50/20" : ""}`}>
                         <td className="px-4 py-3">
+                          {isFilterMatch(item.description) ? (
                           <input
                             type="checkbox"
                             checked={item.isSelected}
@@ -658,11 +661,21 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
                             }}
                             className="accent-indigo-500"
                           />
+                          ) : (
+                            <input
+                              type="checkbox"
+                              disabled
+                              className="accent-slate-300 cursor-not-allowed"
+                            />
+                          )}
                         </td>
                         <td className="px-4 py-3">
                           <span className="font-medium text-slate-700">{item.description}</span>
                           {item.isOptional && (
                             <span className="ml-2 text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Optional</span>
+                          )}
+                          {!isFilterMatch(item.description) && (
+                            <span className="ml-2 text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">Not editable</span>
                           )}
                         </td>
                         <td className="px-4 py-3 text-right font-medium text-slate-700">{formatCurrency(item.billedAmt)}</td>

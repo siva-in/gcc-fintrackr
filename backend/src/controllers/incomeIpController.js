@@ -1,5 +1,4 @@
 const { prisma } = require("../middleware/auth");
-const { Prisma } = require("@prisma/client");
 const { readFirstSheetRowsFromBuffer } = require("../utils/excel");
 
 const DUMMY_VALUES = ["--none--", "undefined", "null", "n/a", "na", "-"];
@@ -60,18 +59,10 @@ const getRowValuesAsText = (row, headers, headerIdx) => {
 
 const toDateOnly = (dateStr) => dateStr ? new Date(`${dateStr}T00:00:00.000Z`) : null;
 
-const INCOME_TXN_FIELDS = new Set(Object.keys(Prisma.IncomeTxnScalarFieldEnum || {}));
-const HAS_PYMT_STATUS = INCOME_TXN_FIELDS.has("pymt_status");
-const HAS_LEGACY_STATUS = INCOME_TXN_FIELDS.has("status");
-const HAS_TXN_STATUS = INCOME_TXN_FIELDS.has("txn_status");
-
 const withIncomeTxnStatusData = (data, pymtStatus, txnStatus) => {
   const next = { ...data };
-  if (pymtStatus != null) {
-    if (HAS_PYMT_STATUS) next.pymt_status = pymtStatus;
-    if (HAS_LEGACY_STATUS) next.status = pymtStatus;
-  }
-  if (txnStatus != null && HAS_TXN_STATUS) next.txn_status = txnStatus;
+  if (pymtStatus != null) next.pymt_status = pymtStatus;
+  if (txnStatus != null) next.txn_status = txnStatus;
   return next;
 };
 
@@ -359,8 +350,8 @@ const importIPDetailReport = async (req, res) => {
         }
 
         // Link patient to IncomeTxn if not already linked, or update if reviewed
-        if (patient && (!incomeTxn.patientId || (HAS_TXN_STATUS && incomeTxn.txn_status === "VERIFIED"))) {
-          const nextTxnStatus = HAS_TXN_STATUS && incomeTxn.txn_status === "VERIFIED" ? "UNVERIFIED" : undefined;
+        if (patient && (!incomeTxn.patientId || incomeTxn.txn_status === "VERIFIED")) {
+          const nextTxnStatus = incomeTxn.txn_status === "VERIFIED" ? "UNVERIFIED" : undefined;
           await prisma.incomeTxn.update({
             where: { id: incomeTxn.id },
             data: withIncomeTxnStatusData({
@@ -510,21 +501,21 @@ const getIPTxns = async (req, res) => {
 
     if (pymtStatus) {
       const pymtStatuses = pymtStatus.split(",").map((s) => s.trim().toUpperCase());
-      if (HAS_PYMT_STATUS) andConditions.push({ pymt_status: { in: pymtStatuses } });
-      else if (HAS_LEGACY_STATUS) andConditions.push({ status: { in: pymtStatuses } });
+      andConditions.push({ pymt_status: { in: pymtStatuses } });
     }
     if (txnStatus) {
       const txnStatuses = txnStatus.split(",").map((s) => s.trim().toUpperCase());
-      if (HAS_TXN_STATUS) andConditions.push({ txn_status: { in: txnStatuses } });
+      andConditions.push({ txn_status: { in: txnStatuses } });
     }
     if (statusTokens.length > 0) {
       const legacyPymtStatuses = statusTokens.filter((s) => paymentStatuses.includes(s));
       const legacyTxnStatuses = statusTokens.filter((s) => transactionStatuses.includes(s));
       if (legacyPymtStatuses.length > 0) {
-        if (HAS_PYMT_STATUS) andConditions.push({ pymt_status: { in: legacyPymtStatuses } });
-        else if (HAS_LEGACY_STATUS) andConditions.push({ status: { in: legacyPymtStatuses } });
+        andConditions.push({ pymt_status: { in: legacyPymtStatuses } });
       }
-      if (legacyTxnStatuses.length > 0 && HAS_TXN_STATUS) andConditions.push({ txn_status: { in: legacyTxnStatuses } });
+      if (legacyTxnStatuses.length > 0) {
+        andConditions.push({ txn_status: { in: legacyTxnStatuses } });
+      }
     }
 
     const where = andConditions.length > 0 ? { AND: andConditions } : {};
@@ -581,14 +572,13 @@ const updateIPTxnError = async (req, res) => {
 
     const txn = await prisma.incomeTxn.findUnique({ where: { id: parseInt(id) } });
     if (!txn) return res.status(404).json({ message: "Transaction not found" });
-    if ((HAS_TXN_STATUS ? txn.txn_status : txn.status) !== "ERROR") return res.status(400).json({ message: "Only ERROR records can be updated" });
+    if (txn.txn_status !== "ERROR") return res.status(400).json({ message: "Only ERROR records can be updated" });
 
     const data = {};
     if (pymt_status && ["FULLYPAID", "PARTIALPAID", "UNPAID"].includes(pymt_status)) {
-      if (HAS_PYMT_STATUS) data.pymt_status = pymt_status;
-      if (HAS_LEGACY_STATUS) data.status = pymt_status;
+      data.pymt_status = pymt_status;
     }
-    if (txn_status && ["VERIFIED", "UNVERIFIED", "ERROR"].includes(txn_status) && HAS_TXN_STATUS) data.txn_status = txn_status;
+    if (txn_status && ["VERIFIED", "UNVERIFIED", "ERROR"].includes(txn_status)) data.txn_status = txn_status;
     if (errorReason !== undefined) data.errorReason = errorReason || null;
     if (grossAmount !== undefined) data.grossAmount = parseFloat(grossAmount) || 0;
     if (discountAmount !== undefined) data.discountAmount = parseFloat(discountAmount) || 0;
@@ -721,15 +711,15 @@ const reviewIPTxn = async (req, res) => {
         if (!doctorId && !bizPartnerId && !pay.isOptional) continue;
         if (pay.isOptional && !doctorId && !bizPartnerId) continue;
 
-        const baseData = {
+          const baseData = {
           partyType,
           incomeTxn: { connect: { id: parseInt(id) } },
           billDate: txn.billDate || new Date(),
           dueDate: txn.billDate ? new Date(`${addDays(txn.billDate.toISOString().split("T")[0], 15)}T00:00:00.000Z`) : null,
           billedAmt,
           payableAmt: payAmt,
-          balanceAmt: billedAmt - payAmt,
-          status: payAmt >= billedAmt ? "PAID" : "PARTIALLY_PAID",
+          balanceAmt: payAmt,
+          status: "PENDING",
           remarks: pay.name || null,
           createdBy: req.user?.username || null,
         };
@@ -744,8 +734,8 @@ const reviewIPTxn = async (req, res) => {
           const updateData = {
             partyType,
             payableAmt: payAmt,
-            balanceAmt: billedAmt - payAmt,
-            status: payAmt >= billedAmt ? "PAID" : "PARTIALLY_PAID",
+            balanceAmt: payAmt,
+            status: "PENDING",
             drId: partyType === "DOCTOR" ? doctorId : null,
             bpId: partyType === "VENDOR" ? bizPartnerId : null,
           };
