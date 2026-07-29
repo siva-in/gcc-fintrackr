@@ -436,4 +436,4 @@ ConfigCategory→ config_category_enum
 **No fallback/legacy compatibility code**
 Do not write runtime guards that check which fields exist.
 When proposing a schema change, the agent **must** advise whether the user needs to recreate the database.
-The agent must not run `npx prisma db push --accept-data-loss`.
+**Never run `npx prisma db push` at all — always ask the user for permission first.**

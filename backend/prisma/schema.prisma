@@ -297,14 +297,17 @@ model IncomeTxn {
   pymt_status    IncomeStatus @map("status")
   txn_status     TxnStatus    @default(UNVERIFIED)
   errorReason    String?      @db.Text
+  realisedTxnId  Int?         @map("realised_txn_id")
   createdAt      DateTime     @default(now())
 
-  incomeSource IncomeSource @relation(fields: [incomeSourceId], references: [id])
-  patient      Patient?     @relation(fields: [patientId], references: [id])
-  rcvdPymts    RcvdPymt[]
-  payables     Payable[]
-  incomeDtls   IncomeDtl[]
-  receivables  Receivable[]
+  incomeSource  IncomeSource @relation(fields: [incomeSourceId], references: [id])
+  patient       Patient?     @relation(fields: [patientId], references: [id])
+  rcvdPymts     RcvdPymt[]
+  payables      Payable[]
+  incomeDtls    IncomeDtl[]
+  receivables   Receivable[]
+  realisedByTxn IncomeTxn?   @relation("RealisedTxn", fields: [realisedTxnId], references: [id])
+  realisedTxns  IncomeTxn[]  @relation("RealisedTxn")
 
   @@index([incomeSourceId])
   @@index([patientId])

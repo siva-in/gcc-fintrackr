@@ -141,6 +141,8 @@ const importIPBilling = async (req, res) => {
     const ipSource = await prisma.incomeSource.findFirst({ where: { code: "IP" } });
     if (!ipSource) return res.status(500).json({ message: "IP income source not found" });
 
+    const advSource = await prisma.incomeSource.findFirst({ where: { code: "ADV" } });
+
     const allPaymentModes = await prisma.paymentMode.findMany();
     const modeMap = {};
     allPaymentModes.forEach((pm) => { modeMap[pm.code] = pm.id; });
@@ -273,6 +275,24 @@ const importIPBilling = async (req, res) => {
             await prisma.iPAdm.create({ data: { ipNo, incomeTxnId: incomeTxn.id } });
           }
         }
+
+        if (lessAdvance > 0 && advSource) {
+          const advTxns = await prisma.incomeTxn.findMany({
+            where: { ipNo, incomeSourceId: advSource.id, pymt_status: "UNREALISED" },
+          });
+          const advSum = advTxns.reduce((sum, t) => sum + (parseFloat(String(t.netAmount)) || 0), 0);
+          if (Math.abs(advSum - lessAdvance) < 0.01) {
+            await prisma.incomeTxn.updateMany({
+              where: { id: { in: advTxns.map((t) => t.id) } },
+              data: { pymt_status: "REALISED", realisedTxnId: incomeTxn.id },
+            });
+          } else {
+            await prisma.incomeTxn.update({
+              where: { id: incomeTxn.id },
+              data: { txn_status: "ERROR", errorReason: "advance miss match" },
+            });
+          }
+        }
       } catch (err) {
         failed++;
         errors.push({ rowNumber: headerRowIndex + 2 + i, rowData: getRowValuesAsText(row, IP_BILLING_HEADERS, headerIdx), reason: err.message || "Processing error" });
@@ -372,19 +392,23 @@ const importIPDetailReport = async (req, res) => {
           await prisma.patient.update({ where: { id: patient.id }, data: { name } });
         }
 
-        // Link patient to IncomeTxn if not already linked, or update if reviewed
-        if (patient && (!incomeTxn.patientId || incomeTxn.txn_status === "VERIFIED")) {
+        const ipNo = incomeTxn.ipNo;
+
+        if (patient && ipNo) {
+          await prisma.incomeTxn.updateMany({
+            where: { ipNo, incomeSourceId: ipSource.id, patientId: null },
+            data: { patientId: patient.id },
+          });
+          await prisma.iPAdm.updateMany({
+            where: { ipNo, patientId: null },
+            data: { patientId: patient.id },
+          });
+        } else if (patient && !ipNo) {
           const nextTxnStatus = incomeTxn.txn_status === "VERIFIED" ? "UNVERIFIED" : undefined;
           await prisma.incomeTxn.update({
             where: { id: incomeTxn.id },
-            data: withIncomeTxnStatusData({
-              patientId: patient.id,
-            }, undefined, nextTxnStatus),
+            data: withIncomeTxnStatusData({ patientId: patient.id }, undefined, nextTxnStatus),
           });
-        }
-
-        // Keep IP Admission's patient in sync once known
-        if (patient) {
           const ipAdm = await prisma.iPAdm.findUnique({ where: { incomeTxnId: incomeTxn.id } });
           if (ipAdm) {
             await prisma.iPAdm.update({ where: { id: ipAdm.id }, data: { patientId: patient.id } });

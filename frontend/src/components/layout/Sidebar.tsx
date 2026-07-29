@@ -4,7 +4,24 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuthStore } from "@/stores/authStore";
 import { useState } from "react";
-import { LayoutDashboard, Users, Building2, FileText, CheckCircle, Shield, Settings, Stethoscope, UserRound, X, ChevronLeft, ChevronDown, Wallet, Handshake, Sliders, BarChart3 } from "lucide-react";
+import {
+  LayoutDashboard,
+  Users,
+  Building2,
+  FileText,
+  CheckCircle,
+  Shield,
+  Settings,
+  Stethoscope,
+  UserRound,
+  X,
+  ChevronLeft,
+  ChevronDown,
+  Wallet,
+  Handshake,
+  Sliders,
+  BarChart3,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 interface NavItem {
@@ -32,7 +49,7 @@ const companyNavItems: NavItem[] = [
     children: [
       { href: "/income/op", label: "OP" },
       { href: "/income/ip", label: "IP" },
-      { href: "/income/lab", label: "LAB" },
+      { href: "/income/lab", label: "Lab" },
       { href: "/income/advance", label: "Advance" },
       { href: "/income/pharma", label: "Pharma" },
     ],
@@ -65,9 +82,7 @@ export default function Sidebar({ isOpen, collapsed, onClose, onToggleCollapse }
 
   return (
     <>
-      {isOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden" onClick={onClose} />
-      )}
+      {isOpen && <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden" onClick={onClose} />}
 
       <aside
         className={`fixed top-0 left-0 z-50 h-full bg-[#0f172a] flex flex-col transition-all duration-300 ease-in-out
@@ -77,15 +92,23 @@ export default function Sidebar({ isOpen, collapsed, onClose, onToggleCollapse }
           w-64
         `}
       >
-        <div className={`flex items-center h-16 px-4 border-b border-white/10 shrink-0 ${collapsed ? "justify-center" : "justify-between"}`}>
+        <div
+          className={`flex items-center h-16 px-4 border-b border-white/10 shrink-0 ${collapsed ? "justify-center" : "justify-between"}`}
+        >
           <Link href="/dashboard" className="flex items-center gap-2.5 min-w-0">
             {!collapsed && <span className="text-lg font-bold text-white tracking-tight">FinTrackr</span>}
           </Link>
           <div className="flex items-center">
-            <button onClick={onClose} className="lg:hidden p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg">
+            <button
+              onClick={onClose}
+              className="lg:hidden p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg"
+            >
               <X size={18} />
             </button>
-            <button onClick={onToggleCollapse} className="hidden lg:flex p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg">
+            <button
+              onClick={onToggleCollapse}
+              className="hidden lg:flex p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg"
+            >
               <ChevronLeft size={18} className={`transition-transform duration-300 ${collapsed ? "rotate-180" : ""}`} />
             </button>
           </div>
@@ -108,7 +131,8 @@ export default function Sidebar({ isOpen, collapsed, onClose, onToggleCollapse }
               if (item.href === "/approvals" && orgRole !== "LEADER") return null;
 
               if (item.children) {
-                const isMenuOpen = openMenus.includes(item.href) || item.children.some((c) => pathname?.startsWith(c.href));
+                const isMenuOpen =
+                  openMenus.includes(item.href) || item.children.some((c) => pathname?.startsWith(c.href));
                 return (
                   <div key={item.href}>
                     <button
@@ -119,11 +143,18 @@ export default function Sidebar({ isOpen, collapsed, onClose, onToggleCollapse }
                         ${isActive ? "bg-indigo-500/15 text-indigo-300 shadow-sm" : "text-slate-400 hover:bg-white/5 hover:text-white"}
                       `}
                     >
-                      <Icon size={20} className={isActive ? "text-indigo-400" : ""} strokeWidth={isActive ? 2.2 : 1.8} />
+                      <Icon
+                        size={20}
+                        className={isActive ? "text-indigo-400" : ""}
+                        strokeWidth={isActive ? 2.2 : 1.8}
+                      />
                       {!collapsed && (
                         <>
                           <span className="flex-1 text-left">{item.label}</span>
-                          <ChevronDown size={16} className={`transition-transform duration-200 ${isMenuOpen ? "rotate-180" : ""}`} />
+                          <ChevronDown
+                            size={16}
+                            className={`transition-transform duration-200 ${isMenuOpen ? "rotate-180" : ""}`}
+                          />
                         </>
                       )}
                     </button>
