@@ -477,6 +477,7 @@ function IncomeIPPageContent() {
     switch (status) {
       case "VERIFIED": return "bg-emerald-50 text-emerald-600";
       case "UNVERIFIED": return "bg-orange-50 text-orange-600";
+    case "REVIEW_REQ": return "bg-red-50 text-red-600";
       case "ERROR": return "bg-red-50 text-red-600";
       default: return "bg-slate-50 text-slate-500";
     }
@@ -706,6 +707,7 @@ function IncomeIPPageContent() {
                     <option value="">All Txn Status</option>
                     <option value="VERIFIED">Verified</option>
                     <option value="UNVERIFIED">Unverified</option>
+                    <option value="REVIEW_REQ">Review Required</option>
                     <option value="ERROR">Error</option>
                   </select>
                 </div>
@@ -768,44 +770,47 @@ function IncomeIPPageContent() {
                     ) : txns.length === 0 ? (
                       <tr><td colSpan={7} className="text-center py-12 text-slate-400">No transactions found</td></tr>
                     ) : (
-                      txns.map((txn) => (
-                        <tr
-                          key={txn.id}
-                          onClick={() => {
-                            const params = new URLSearchParams();
-                            params.set("search", search);
-                            params.set("fromDate", fromDate);
-                            params.set("toDate", toDate);
-                            params.set("txnStatus", txnStatusFilter);
-                            params.set("pymtStatus", pymtStatusFilter);
-                            params.set("page", String(page));
-                            router.push(`/income/ip/review/${txn.id}?${params.toString()}`);
-                          }}
-                          className={`cursor-pointer hover:bg-slate-50/80 ${txn.txn_status === "ERROR" ? "bg-red-50/50" : txn.txn_status === "UNVERIFIED" ? "bg-orange-50/30" : ""}`}
-                        >
-                          <td className="px-5 py-3.5 font-medium text-slate-700">{txn.billNo}</td>
-                          <td className="px-5 py-3.5 text-slate-500 hidden sm:table-cell">{formatDate(txn.billDate)}</td>
-                          <td className="px-5 py-3.5 text-slate-700">{txn.patient?.name || "-"}</td>
-                          <td className="px-5 py-3.5 text-slate-500 hidden md:table-cell">{txn.patient?.uhid || "-"}</td>
-                          <td className="px-5 py-3.5 text-right font-medium text-slate-700">{txn.netAmount ? formatCurrency(Number(txn.netAmount)) : "-"}</td>
-                          <td className="px-5 py-3.5">
-                            <div className="flex flex-wrap gap-1">
-                              {txn.rcvdPymts.map((p, i) => (
-                                <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 rounded text-xs">
-                                  <span className="font-medium">{p.paymentMode?.code || "-"}</span>
-                                  {p.amount ? <span className="text-slate-500">{formatCurrency(Number(p.amount))}</span> : null}
-                                </span>
-                              ))}
-                              {txn.rcvdPymts.length === 0 && <span className="text-xs text-slate-400">-</span>}
-                            </div>
-                          </td>
-                          <td className="px-5 py-3.5">
-                            <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(txn.txn_status)}`}>
-                              {txn.txn_status}
-                            </span>
-                          </td>
-                        </tr>
-                      ))
+                        txns.map((txn) => {
+                          const isReviewReq = txn.txn_status === "REVIEW_REQ";
+                          return (
+                          <tr
+                            key={txn.id}
+                            onClick={() => {
+                              const params = new URLSearchParams();
+                              params.set("search", search);
+                              params.set("fromDate", fromDate);
+                              params.set("toDate", toDate);
+                              params.set("txnStatus", txnStatusFilter);
+                              params.set("pymtStatus", pymtStatusFilter);
+                              params.set("page", String(page));
+                              router.push(`/income/ip/review/${txn.id}?${params.toString()}`);
+                            }}
+                            className={`cursor-pointer hover:bg-slate-50/80 ${txn.txn_status === "ERROR" ? "bg-red-50/50" : txn.txn_status === "UNVERIFIED" ? "bg-orange-50/30" : ""}`}
+                          >
+                            <td className={`px-5 py-3.5 font-medium ${isReviewReq ? "text-red-600" : "text-slate-700"}`}>{txn.billNo}</td>
+                            <td className={`px-5 py-3.5 hidden sm:table-cell ${isReviewReq ? "text-red-600" : "text-slate-500"}`}>{formatDate(txn.billDate)}</td>
+                            <td className={`px-5 py-3.5 ${isReviewReq ? "text-red-600" : "text-slate-700"}`}>{txn.patient?.name || "-"}</td>
+                            <td className={`px-5 py-3.5 hidden md:table-cell ${isReviewReq ? "text-red-600" : "text-slate-500"}`}>{txn.patient?.uhid || "-"}</td>
+                            <td className={`px-5 py-3.5 text-right font-medium ${isReviewReq ? "text-red-600" : "text-slate-700"}`}>{txn.netAmount ? formatCurrency(Number(txn.netAmount)) : "-"}</td>
+                            <td className="px-5 py-3.5">
+                              <div className="flex flex-wrap gap-1">
+                                {txn.rcvdPymts.map((p, i) => (
+                                  <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 rounded text-xs">
+                                    <span className="font-medium">{p.paymentMode?.code || "-"}</span>
+                                    {p.amount ? <span className="text-slate-500">{formatCurrency(Number(p.amount))}</span> : null}
+                                  </span>
+                                ))}
+                                {txn.rcvdPymts.length === 0 && <span className="text-xs text-slate-400">-</span>}
+                              </div>
+                            </td>
+                            <td className={`px-5 py-3.5 ${isReviewReq ? "text-red-600" : ""}`}>
+                              <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(txn.txn_status)}`}>
+                                {txn.txn_status === "REVIEW_REQ" ? "REVIEW REQ" : txn.txn_status}
+                              </span>
+                            </td>
+                          </tr>
+                          );
+                        })
                     )}
                   </tbody>
                 </table>

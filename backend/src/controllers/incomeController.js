@@ -66,6 +66,15 @@ const addDays = (dateStr, days) => {
   return `${y}-${m}-${dd}`;
 };
 
+const addOneMonth = (dateStr) => {
+  const d = new Date(dateStr);
+  d.setMonth(d.getMonth() + 1);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+};
+
 const toDateOnly = (dateStr) => dateStr ? new Date(`${dateStr}T00:00:00.000Z`) : null;
 
 const withIncomeTxnStatusData = (data, pymtStatus, txnStatus) => {
@@ -196,51 +205,31 @@ const importOPBilling = async (req, res) => {
         }
 
         const billDate = parseDate(row[headerIdx["Date"]]);
-        const netAmount = parseDecimal(row[headerIdx["Net Amount"]]);
-        const creditStatus = cleanValue(row[headerIdx["Credit status"]]);
-        const terms = cleanValue(row[headerIdx["Terms"]]);
+        const netAmount = parseDecimal(row[headerIdx["Net Amount"]]) || 0;
         const cashAmt = parseDecimal(row[headerIdx["Cash_Amt"]]) || 0;
         const bankAmt = parseDecimal(row[headerIdx["Bank Amt"]]) || 0;
         const creditAmt = parseDecimal(row[headerIdx["Credit Amt"]]) || 0;
-        const isReceived = creditStatus && creditStatus.toLowerCase() === "received";
-        const termsLower = (terms || "").toLowerCase();
 
-        if (termsLower === "cash") {
-          if (cashAmt <= 0) {
-            failed++;
-            errors.push({ rowNumber: rowNum, rowData, reason: "TERM=CASH but Cash_Amt is 0 or empty" });
-            continue;
-          }
-          if (creditAmt > 0 && isReceived) {
-            failed++;
-            errors.push({ rowNumber: rowNum, rowData, reason: "TERM=CASH with Credit_Amt > 0 and Credit status=Received" });
-            continue;
-          }
-        } else if (termsLower === "credit") {
-          if (creditAmt <= 0) {
-            failed++;
-            errors.push({ rowNumber: rowNum, rowData, reason: "TERM=CREDIT but Credit_Amt is 0 or empty" });
-            continue;
-          }
-          if (isReceived) {
-            failed++;
-            errors.push({ rowNumber: rowNum, rowData, reason: "TERM=CREDIT with Credit status=Received" });
-            continue;
-          }
+        const paidAmt = cashAmt + bankAmt;
+        const unpaid = creditAmt;
+        const net = netAmount;
+        const txnStatusBase = bankAmt > 0 ? "REVIEW_REQ" : "UNVERIFIED";
+
+        let pymtStatus, txnStatus;
+
+        if (unpaid > 0 && paidAmt === 0 && unpaid === net) {
+          pymtStatus = "UNPAID";
+          txnStatus = txnStatusBase;
+        } else if (paidAmt > 0 && paidAmt === net) {
+          pymtStatus = "FULLYPAID";
+          txnStatus = txnStatusBase;
+        } else if (paidAmt > 0 && unpaid > 0 && paidAmt + unpaid === net) {
+          pymtStatus = "PARTIALPAID";
+          txnStatus = txnStatusBase;
         } else {
-          if (bankAmt <= 0) {
-            failed++;
-            errors.push({ rowNumber: rowNum, rowData, reason: `TERM=${terms || "EMPTY"} but Bank_Amt is 0 or empty` });
-            continue;
-          }
-          if (creditAmt > 0 && isReceived) {
-            failed++;
-            errors.push({ rowNumber: rowNum, rowData, reason: `TERM=${terms} with Credit_Amt > 0 and Credit status=Received` });
-            continue;
-          }
+          pymtStatus = "UNPAID";
+          txnStatus = "ERROR";
         }
-
-        const pymtStatus = isReceived ? "FULLYPAID" : "UNPAID";
 
         const existing = await prisma.incomeTxn.findFirst({ where: { billNo } });
 
@@ -253,9 +242,11 @@ const importOPBilling = async (req, res) => {
               billDate: toDateOnly(billDate),
               grossAmount: netAmount,
               netAmount,
-            }, pymtStatus, "UNVERIFIED"),
+              errorReason: txnStatus === "ERROR" ? "Payment mismatch" : null,
+            }, pymtStatus, txnStatus),
           });
           await prisma.rcvdPymt.deleteMany({ where: { incomeTxnId: existing.id } });
+          await prisma.receivable.deleteMany({ where: { incomeTxnId: existing.id } });
           updated++;
         } else {
           incomeTxn = await prisma.incomeTxn.create({
@@ -269,40 +260,54 @@ const importOPBilling = async (req, res) => {
               discountAmount: 0,
               advAdjt: 0,
               netAmount,
-            }, pymtStatus, "UNVERIFIED"),
+            }, pymtStatus, txnStatus),
           });
           inserted++;
         }
 
-        const pymtsToCreate = [];
-
-        if (termsLower === "cash") {
-          pymtsToCreate.push({ amount: cashAmt, mode: "CASH" });
-          if (bankAmt > 0) pymtsToCreate.push({ amount: bankAmt, mode: "UPI" });
-          if (creditAmt > 0 && !isReceived) pymtsToCreate.push({ amount: creditAmt, mode: "CREDIT" });
-        } else if (termsLower === "credit") {
-          if (cashAmt > 0) pymtsToCreate.push({ amount: cashAmt, mode: "CASH" });
-          if (bankAmt > 0) pymtsToCreate.push({ amount: bankAmt, mode: "UPI" });
-          pymtsToCreate.push({ amount: creditAmt, mode: "CREDIT" });
-        } else {
-          if (cashAmt > 0) pymtsToCreate.push({ amount: cashAmt, mode: "CASH" });
-          pymtsToCreate.push({ amount: bankAmt, mode: "UPI" });
-          if (creditAmt > 0 && !isReceived) pymtsToCreate.push({ amount: creditAmt, mode: "CREDIT" });
-        }
-
-        for (const pmt of pymtsToCreate) {
-          await prisma.rcvdPymt.create({
-            data: {
-              incomeTxnId: incomeTxn.id,
-              paymentModeId: modeMap[pmt.mode] || null,
-              amount: pmt.amount,
-              paymentDate: toDateOnly(billDate),
-              transactionNo: null,
-              bankName: null,
-              paidBy: "SELF",
-              remarks: null,
-            },
-          });
+        if (txnStatus !== "ERROR") {
+          if (cashAmt > 0) {
+            await prisma.rcvdPymt.create({
+              data: {
+                incomeTxnId: incomeTxn.id,
+                paymentModeId: modeMap["CASH"] || null,
+                amount: cashAmt,
+                paymentDate: toDateOnly(billDate),
+                transactionNo: null,
+                bankName: null,
+                paidBy: "SELF",
+                remarks: null,
+              },
+            });
+          }
+          if (bankAmt > 0) {
+            await prisma.rcvdPymt.create({
+              data: {
+                incomeTxnId: incomeTxn.id,
+                paymentModeId: modeMap["BANK"] || null,
+                amount: bankAmt,
+                paymentDate: toDateOnly(billDate),
+                transactionNo: null,
+                bankName: null,
+                paidBy: "SELF",
+                remarks: null,
+              },
+            });
+          }
+          if (unpaid > 0) {
+            await prisma.receivable.create({
+              data: {
+                arType: "PATIENT",
+                patId: patientId,
+                incomeTxnId: incomeTxn.id,
+                billDate: toDateOnly(billDate) || new Date(),
+                dueDate: toDateOnly(addOneMonth(billDate)),
+                dueAmt: unpaid,
+                balanceAmt: unpaid,
+                status: "PENDING",
+              },
+            });
+          }
         }
       } catch (err) {
         failed++;
@@ -960,14 +965,15 @@ const updateIncomeTxnFull = async (req, res) => {
         const pmtAmount = parseFloat(pmt.amount) || 0;
 
         if (creditModeId && pmtModeId === creditModeId) {
-          const dueDate = pmt.paymentDate || null;
+          const billDateStr = txn.billDate ? new Date(txn.billDate).toISOString().split('T')[0] : null;
+          const dueDate = billDateStr ? toDateOnly(addOneMonth(billDateStr)) : null;
           await prisma.receivable.create({
             data: {
               arType: "PATIENT",
               patId: txn.patientId,
               incomeTxnId: txnId,
               billDate: txn.billDate || new Date(),
-              dueDate: dueDate ? new Date(dueDate) : null,
+              dueDate,
               dueAmt: pmtAmount,
               balanceAmt: pmtAmount,
               status: "PENDING",
@@ -1133,8 +1139,15 @@ const bulkVerifyTxns = async (req, res) => {
     if (!ids || !Array.isArray(ids) || ids.length === 0)
       return res.status(400).json({ message: "ids array is required" });
 
+    const invalidCount = await prisma.incomeTxn.count({
+      where: { id: { in: ids.map(Number) }, txn_status: { in: ["ERROR", "REVIEW_REQ"] } },
+    });
+    if (invalidCount > 0) {
+      return res.status(400).json({ message: "Cannot verify ERROR or REVIEW_REQ transactions" });
+    }
+
     const result = await prisma.incomeTxn.updateMany({
-      where: { id: { in: ids.map(Number) }, incomeSource: { code: "OP" } },
+      where: { id: { in: ids.map(Number) }, incomeSource: { code: "OP" }, txn_status: "UNVERIFIED" },
       data: { txn_status: "VERIFIED" },
     });
 

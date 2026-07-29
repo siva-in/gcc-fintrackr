@@ -6,7 +6,7 @@ import api from "@/lib/api";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import toast from "react-hot-toast";
-import { Upload, Search, X, Banknote, CreditCard, Wallet, TrendingUp, List, LayoutDashboard, FileText, AlertTriangle, Eye, Stethoscope, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Pencil } from "lucide-react";
+import { Upload, Search, X, Banknote, CreditCard, Wallet, TrendingUp, List, LayoutDashboard, FileText, AlertTriangle, Eye, Stethoscope, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Pencil, CheckCircle } from "lucide-react";
 
 interface Dashboard {
   cash: number;
@@ -28,7 +28,8 @@ interface IncomeTxn {
   discountAmount: number | null;
   advAdjt: number | null;
   patient: { id: number; name: string; uhid: string | null } | null;
-  rcvdPymts: { id: number; amount: number | null; paymentMode: { code: string; name: string } | null }[];
+  rcvdPymts: { id: number; amount: number | null; paymentDate: string | null; paymentMode: { code: string; name: string } | null }[];
+  receivables?: { id: number; arType: string; dueAmt: number; balanceAmt: number; dueDate: string | null }[];
   payables: { id: number; billedAmt: number; balanceAmt: number; status: string; remarks: string | null; doctor: { id: number; name: string } | null }[];
   incomeSource: { code: string; name: string } | null;
 }
@@ -138,6 +139,9 @@ export default function IncomeLabPage() {
   const [doctorSummaryLoading, setDoctorSummaryLoading] = useState(false);
 
   const [settleModalOpen, setSettleModalOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkVerifying, setBulkVerifying] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [settleDoctor, setSettleDoctor] = useState<{ id: number; name: string } | null>(null);
   const [settlePayables, setSettlePayables] = useState<{ id: number; billNo: string; billedAmt: number; balanceAmt: number; status: string; paidTotal: number; remarks: string | null; incomeTxn: { billNo: string; patient: { name: string } | null } | null; pymts: { id: number; amount: number | null; paymentMode: { code: string; name: string } | null; paymentDate: string | null; paidBy: string | null }[] }[]>([]);
   const [settleGrandTotal, setSettleGrandTotal] = useState(0);
@@ -155,7 +159,7 @@ export default function IncomeLabPage() {
 
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentTxn, setPaymentTxn] = useState<IncomeTxn | null>(null);
-  const [paymentEntries, setPaymentEntries] = useState<{ paymentModeId: number; amount: string; creditPaid: boolean }[]>([]);
+  const [paymentEntries, setPaymentEntries] = useState<{ paymentModeId: number; amount: string; paymentDate: string; creditPaid: boolean }[]>([]);
   const [paymentSaving, setPaymentSaving] = useState(false);
   const [paymentLoading, setPaymentLoading] = useState(false);
 
@@ -301,13 +305,30 @@ export default function IncomeLabPage() {
     setPaymentModalOpen(true);
     try {
       const { data } = await api.get(`/income/lab/txns/${txn.id}`);
-      const entries = (data.rcvdPymts || []).map((p: { paymentModeId: number; paymentMode: { id: number } | null; amount: number | null }) => ({
+      const billDate = txn.billDate ? new Date(txn.billDate).toISOString().split("T")[0] : new Date().toISOString().split("T")[0];
+      const futureDate = txn.billDate ? new Date(new Date(txn.billDate).getTime() + 30 * 86400000).toISOString().split("T")[0] : new Date().toISOString().split("T")[0];
+      const creditMode = paymentModes.find((m) => m.code === "CREDIT");
+      const entries = (data.rcvdPymts || []).map((p: { paymentModeId: number; paymentMode: { id: number } | null; amount: number | null; paymentDate: string | null }) => ({
         paymentModeId: p.paymentModeId || p.paymentMode?.id || 0,
         amount: p.amount != null ? String(p.amount) : "",
+        paymentDate: p.paymentDate ? new Date(p.paymentDate).toISOString().split("T")[0] : futureDate,
         creditPaid: true,
       }));
+
+      const receivableCreditTotal = (data.receivables || [])
+        .filter((r: { arType: string }) => r.arType === "PATIENT")
+        .reduce((sum: number, r: { dueAmt: number }) => sum + Number(r.dueAmt), 0);
+      if (receivableCreditTotal > 0 && creditMode) {
+        entries.push({
+          paymentModeId: creditMode.id,
+          amount: String(receivableCreditTotal),
+          paymentDate: futureDate,
+          creditPaid: false,
+        });
+      }
+
       if (entries.length === 0) {
-        entries.push({ paymentModeId: 0, amount: "", creditPaid: true });
+        entries.push({ paymentModeId: 0, amount: "", paymentDate: futureDate, creditPaid: true });
       }
       setPaymentEntries(entries);
     } catch {
@@ -322,6 +343,10 @@ export default function IncomeLabPage() {
     const valid = paymentEntries.filter((e) => e.paymentModeId > 0 && parseFloat(e.amount) > 0);
     if (valid.length === 0) return toast.error("Add at least one payment with amount");
 
+    const totalAmt = valid.reduce((sum, e) => sum + parseFloat(e.amount), 0);
+    const net = paymentTxn?.netAmount ? Number(paymentTxn.netAmount) : 0;
+    if (Math.abs(totalAmt - net) > 0.01) return toast.error(`Total payments (${totalAmt.toFixed(2)}) must match bill amount (${net.toFixed(2)})`);
+
     setPaymentSaving(true);
     try {
       const payments = valid.map((e) => {
@@ -329,9 +354,9 @@ export default function IncomeLabPage() {
         return {
           paymentModeId: e.paymentModeId,
           amount: e.amount,
-          paymentDate: paymentTxn.billDate || undefined,
-          isCreditPaid: mode?.code === "CREDIT" ? e.creditPaid : undefined,
-          creditStatus: mode?.code === "CREDIT" ? (e.creditPaid ? "RECEIVED" : "PENDING") : undefined,
+          paymentDate: e.paymentDate || undefined,
+          isCreditPaid: mode?.code === "CREDIT" ? false : undefined,
+          creditStatus: mode?.code === "CREDIT" ? "PENDING" : undefined,
         };
       });
       await api.put(`/income/lab/txns/${paymentTxn.id}/payments`, { payments });
@@ -348,7 +373,10 @@ export default function IncomeLabPage() {
   };
 
   const addPaymentRow = () => {
-    setPaymentEntries((prev) => [...prev, { paymentModeId: 0, amount: "", creditPaid: true }]);
+    const futureDate = paymentTxn?.billDate
+      ? new Date(new Date(paymentTxn.billDate).getTime() + 30 * 86400000).toISOString().split("T")[0]
+      : new Date().toISOString().split("T")[0];
+    setPaymentEntries((prev) => [...prev, { paymentModeId: 0, amount: "", paymentDate: futureDate, creditPaid: true }]);
   };
 
   const removePaymentRow = (idx: number) => {
@@ -360,6 +388,47 @@ export default function IncomeLabPage() {
   };
 
   useEffect(() => { fetchDashboard(); fetchDoctorSummary(); fetchPaymentModes(); }, [fetchDashboard, fetchDoctorSummary]);
+
+  const handleBulkVerify = () => {
+    if (selectedIds.size === 0) return;
+    setShowConfirmModal(true);
+  };
+
+  const handleConfirmVerify = async () => {
+    setShowConfirmModal(false);
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    setBulkVerifying(true);
+    try {
+      const { data } = await api.post("/income/lab/txns/bulk-verify", { ids });
+      toast.success(data.message);
+      setSelectedIds(new Set());
+      fetchTxns(page, search, fromDate, toDate, txnPaymentFilter, txnStatusFilter);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || "Bulk verify failed";
+      toast.error(msg);
+    } finally {
+      setBulkVerifying(false);
+    }
+  };
+
+  const toggleSelectId = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    const selectable = txns.filter((t) => t.txn_status === "UNVERIFIED");
+    if (selectedIds.size === selectable.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(selectable.map((t) => t.id)));
+    }
+  };
 
   const fetchTxns = async (p = page, s = search, fd = fromDate, td = toDate, pm = txnPaymentFilter, st = txnStatusFilter) => {
     setLoading(true);
@@ -792,6 +861,7 @@ export default function IncomeLabPage() {
                       <option value="">All Txn Status</option>
                       <option value="VERIFIED">Verified</option>
                       <option value="UNVERIFIED">Unverified</option>
+                      <option value="REVIEW_REQ">Review Required</option>
                       <option value="ERROR">Error</option>
                     </select>
                   </div>
@@ -819,43 +889,77 @@ export default function IncomeLabPage() {
                 </div>
               </div>
 
+              {selectedIds.size > 0 && (
+                <div className="flex items-center gap-3 px-4 py-3 bg-indigo-50/50 border border-indigo-100 rounded-xl mb-4">
+                  <span className="text-sm font-medium text-indigo-700">{selectedIds.size} selected</span>
+                  <Button size="sm" onClick={handleBulkVerify} isLoading={bulkVerifying}>
+                    <CheckCircle size={16} className="mr-1" /> Mark Verified
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={() => setSelectedIds(new Set())}>Clear</Button>
+                </div>
+              )}
               <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-slate-200/60">
+                        <th className="w-10 px-2 py-3.5">
+                          {txns.some((t) => t.txn_status === "UNVERIFIED") && (
+                          <input
+                            type="checkbox"
+                            checked={txns.length > 0 && selectedIds.size === txns.filter((t) => t.txn_status === "UNVERIFIED").length}
+                            onChange={toggleSelectAll}
+                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 accent-indigo-600"
+                          />
+                          )}
+                        </th>
                         <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Bill No</th>
                         <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden sm:table-cell">Date</th>
                         <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Patient</th>
                         <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden md:table-cell">UHID</th>
                         <th className="text-right px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Amount</th>
                         <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Payment</th>
-                        <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Status</th>
-                        <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Actions</th>
+                        <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Payment Status</th>
+                        <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Txn Status</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {!hasSearched ? (
-                        <tr><td colSpan={8} className="text-center py-12 text-slate-400">
+                        <tr><td colSpan={9} className="text-center py-12 text-slate-400">
                           Use the search or date filter to view transactions
                         </td></tr>
                       ) : loading ? (
-                        <tr><td colSpan={8} className="text-center py-12 text-slate-400">
+                        <tr><td colSpan={9} className="text-center py-12 text-slate-400">
                           <div className="flex items-center justify-center gap-2">
                             <div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin" />
                             Loading...
                           </div>
                         </td></tr>
                       ) : txns.length === 0 ? (
-                        <tr><td colSpan={8} className="text-center py-12 text-slate-400">No transactions found</td></tr>
+                        <tr><td colSpan={9} className="text-center py-12 text-slate-400">No transactions found</td></tr>
                       ) : (
-                        txns.map((txn) => (
-                          <tr key={txn.id} className={`hover:bg-slate-50/80 ${txn.txn_status === "ERROR" ? "bg-red-50/50" : ""}`}>
-                            <td className="px-5 py-3.5 font-medium text-slate-700">{txn.billNo}</td>
-                            <td className="px-5 py-3.5 text-slate-500 hidden sm:table-cell">{formatDate(txn.billDate)}</td>
-                            <td className="px-5 py-3.5 text-slate-700">{txn.patient?.name || "-"}</td>
-                            <td className="px-5 py-3.5 text-slate-500 hidden md:table-cell">{txn.patient?.uhid || "-"}</td>
-                            <td className="px-5 py-3.5 text-right font-medium text-slate-700">{txn.netAmount ? formatCurrency(Number(txn.netAmount)) : "-"}</td>
+                        txns.map((txn) => {
+                          const isReviewReq = txn.txn_status === "REVIEW_REQ";
+                          return (
+                          <tr
+                            key={txn.id}
+                            className={`hover:bg-slate-50/80 ${txn.txn_status === "ERROR" ? "bg-red-50/50" : ""}`}
+                          >
+                            <td className="w-10 px-2 py-3.5 text-center">
+                              {txn.txn_status === "UNVERIFIED" ? (
+                                <input
+                                  type="checkbox"
+                                  checked={selectedIds.has(txn.id)}
+                                  onChange={() => toggleSelectId(txn.id)}
+                                  className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 accent-indigo-600"
+                                />
+                              ) : null}
+                            </td>
+                            <td className={`px-5 py-3.5 font-medium cursor-pointer hover:text-indigo-600 ${isReviewReq ? "text-red-600" : "text-slate-700"}`} onClick={() => openPaymentModal(txn)}>{txn.billNo}</td>
+                            <td className={`px-5 py-3.5 hidden sm:table-cell ${isReviewReq ? "text-red-600" : "text-slate-500"}`}>{formatDate(txn.billDate)}</td>
+                            <td className={`px-5 py-3.5 ${isReviewReq ? "text-red-600" : "text-slate-700"}`}>{txn.patient?.name || "-"}</td>
+                            <td className={`px-5 py-3.5 hidden md:table-cell ${isReviewReq ? "text-red-600" : "text-slate-500"}`}>{txn.patient?.uhid || "-"}</td>
+                            <td className={`px-5 py-3.5 text-right font-medium ${isReviewReq ? "text-red-600" : "text-slate-700"}`}>{txn.netAmount ? formatCurrency(Number(txn.netAmount)) : "-"}</td>
                             <td className="px-5 py-3.5">
                               <div className="flex flex-wrap gap-1">
                                 {txn.rcvdPymts.map((p, i) => (
@@ -867,36 +971,33 @@ export default function IncomeLabPage() {
                                 {txn.rcvdPymts.length === 0 && <span className="text-xs text-slate-400">-</span>}
                               </div>
                             </td>
+                            <td className={`px-5 py-3.5 ${isReviewReq ? "text-red-600" : ""}`}>
+                              <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium ${
+                                txn.pymt_status === "FULLYPAID" ? "bg-emerald-50 text-emerald-600" :
+                                txn.pymt_status === "PARTIALPAID" ? "bg-amber-50 text-amber-600" :
+                                "bg-red-50 text-red-600"
+                              }`}>
+                                {txn.pymt_status}
+                              </span>
+                            </td>
                             <td className="px-5 py-3.5">
                               <div className="flex flex-col gap-1">
-                                <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium ${txn.txn_status === "VERIFIED" ? "bg-emerald-50 text-emerald-600" : txn.txn_status === "UNVERIFIED" ? "bg-amber-50 text-amber-600" : "bg-red-50 text-red-600"}`}>
-                                  {txn.txn_status}
+                                <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium ${
+                                  txn.txn_status === "VERIFIED" ? "bg-emerald-50 text-emerald-600" :
+                                  txn.txn_status === "REVIEW_REQ" ? "bg-red-50 text-red-600" :
+                                  txn.txn_status === "UNVERIFIED" ? "bg-amber-50 text-amber-600" :
+                                  "bg-red-50 text-red-600"
+                                }`}>
+                                  {txn.txn_status === "REVIEW_REQ" ? "REVIEW REQ" : txn.txn_status}
                                 </span>
                                 {txn.txn_status === "ERROR" && txn.errorReason && (
                                   <span className="text-[10px] text-red-500 max-w-[150px] truncate" title={txn.errorReason}>{txn.errorReason}</span>
                                 )}
                               </div>
                             </td>
-                            <td className="px-5 py-3.5 text-center">
-                              <div className="flex items-center justify-center gap-2">
-                                <button
-                                  onClick={() => openPaymentModal(txn)}
-                                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-medium hover:bg-indigo-100 transition-colors"
-                                >
-                                  <Pencil size={14} /> Payments
-                                </button>
-                                {txn.txn_status === "ERROR" && (
-                                  <button
-                                    onClick={() => openEditModal(txn)}
-                                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-amber-50 text-amber-600 rounded-lg text-xs font-medium hover:bg-amber-100 transition-colors"
-                                  >
-                                    <Eye size={14} /> Review
-                                  </button>
-                                )}
-                              </div>
-                            </td>
                           </tr>
-                        ))
+                          );
+                        })
                       )}
                     </tbody>
                   </table>
@@ -1004,14 +1105,14 @@ export default function IncomeLabPage() {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {logLoading ? (
-                        <tr><td colSpan={8} className="text-center py-12 text-slate-400">
+                        <tr><td colSpan={9} className="text-center py-12 text-slate-400">
                           <div className="flex items-center justify-center gap-2">
                             <div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin" />
                             Loading...
                           </div>
                         </td></tr>
                       ) : importLogs.length === 0 ? (
-                        <tr><td colSpan={8} className="text-center py-12 text-slate-400">No import logs found</td></tr>
+                        <tr><td colSpan={9} className="text-center py-12 text-slate-400">No import logs found</td></tr>
                       ) : (
                         importLogs.map((log) => (
                           <tr key={log.id} className="hover:bg-slate-50/80">
@@ -1102,6 +1203,19 @@ export default function IncomeLabPage() {
               </div>
             </>
           )}
+
+          <Modal isOpen={showConfirmModal} onClose={() => setShowConfirmModal(false)} title="Confirm Verification">
+            <div className="space-y-4">
+              <p className="text-sm text-slate-600">
+                Are you sure you want to mark <strong>{selectedIds.size}</strong> transaction(s) as verified?
+              </p>
+              <p className="text-xs text-slate-400">Once done, the transactions cannot be bulk-verified again.</p>
+              <div className="flex justify-end gap-3 pt-2">
+                <Button variant="secondary" onClick={() => setShowConfirmModal(false)}>Cancel</Button>
+                <Button onClick={handleConfirmVerify} isLoading={bulkVerifying}>Confirm</Button>
+              </div>
+            </div>
+          </Modal>
 
           <Modal isOpen={importModalOpen} onClose={() => { if (!importing) setImportModalOpen(false); }} title="Import LAB Billing Report">
             <div className="space-y-4">
@@ -1542,7 +1656,16 @@ export default function IncomeLabPage() {
                             <label className="block text-xs text-slate-500 mb-1">Mode</label>
                             <select
                               value={entry.paymentModeId}
-                              onChange={(e) => updatePaymentEntry(idx, "paymentModeId", parseInt(e.target.value))}
+                              onChange={(e) => {
+                                updatePaymentEntry(idx, "paymentModeId", parseInt(e.target.value));
+                                const selectedMode = paymentModes.find((m) => m.id === parseInt(e.target.value));
+                                if (selectedMode?.code !== "CREDIT") {
+                                  const date = paymentTxn?.billDate
+                                    ? new Date(paymentTxn.billDate).toISOString().split("T")[0]
+                                    : new Date().toISOString().split("T")[0];
+                                  updatePaymentEntry(idx, "paymentDate", date);
+                                }
+                              }}
                               className="w-full px-2.5 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                             >
                               <option value={0}>Select</option>
@@ -1563,22 +1686,20 @@ export default function IncomeLabPage() {
                             />
                           </div>
                         </div>
+                        <div>
+                          <label className="block text-xs text-slate-500 mb-1">
+                            {isCredit ? "Payment Due Date" : "Payment Date"}
+                          </label>
+                          <input
+                            type="date"
+                            value={entry.paymentDate}
+                            onChange={(e) => updatePaymentEntry(idx, "paymentDate", e.target.value)}
+                            className="w-full px-2.5 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                          />
+                        </div>
                         {isCredit && (
-                          <div className="flex items-center gap-3 pt-1">
-                            <span className="text-xs text-slate-500">Credit Status:</span>
-                            <button
-                              onClick={() => updatePaymentEntry(idx, "creditPaid", !entry.creditPaid)}
-                              className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
-                                entry.creditPaid
-                                  ? "bg-emerald-50 text-emerald-600 border border-emerald-200"
-                                  : "bg-amber-50 text-amber-600 border border-amber-200"
-                              }`}
-                            >
-                              {entry.creditPaid ? "Paid" : "Unpaid"}
-                            </button>
-                            {!entry.creditPaid && (
-                              <span className="text-[10px] text-amber-600">Receivable will be created</span>
-                            )}
+                          <div className="text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-lg">
+                            Credit will be recorded as receivable (pending)
                           </div>
                         )}
                       </div>

@@ -215,6 +215,7 @@ enum IncomeStatus {
 enum TxnStatus {
   VERIFIED
   UNVERIFIED
+  REVIEW_REQ
   ERROR
 }
 

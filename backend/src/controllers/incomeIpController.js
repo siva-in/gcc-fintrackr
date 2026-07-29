@@ -75,6 +75,15 @@ const addDays = (dateStr, days) => {
   return `${y}-${m}-${dd}`;
 };
 
+const addOneMonth = (dateStr) => {
+  const d = new Date(dateStr);
+  d.setMonth(d.getMonth() + 1);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+};
+
 const findHeaderRow = (rows, requiredHeaders) => {
   for (let i = 0; i < Math.min(10, rows.length); i++) {
     const row = rows[i];
@@ -162,8 +171,6 @@ const importIPBilling = async (req, res) => {
       }
 
       const ipNo = cleanValue(row[headerIdx["IP No"]]);
-      const name = cleanValue(row[headerIdx["Patient Name"]]);
-      const terms = cleanValue(row[headerIdx["Terms"]]);
       const billDate = parseDate(row[headerIdx["Date"]]);
       const totalAmount = parseDecimal(row[headerIdx["Total Amount"]]) || 0;
       const discount = parseDecimal(row[headerIdx["Discount"]]) || 0;
@@ -176,10 +183,26 @@ const importIPBilling = async (req, res) => {
       const companyAmt = parseDecimal(row[headerIdx["company_amount"]]) || 0;
       const insuranceAmt = parseDecimal(row[headerIdx["insurance_amount"]]) || 0;
 
-      const totalPaid = cashAmt + bankAmt + creditAmt + companyAmt + insuranceAmt;
-      let pymtStatus = "UNPAID";
-      if (totalPaid >= netAmount - 0.01) pymtStatus = "FULLYPAID";
-      else if (totalPaid > 0) pymtStatus = "PARTIALPAID";
+      const paidAmt = cashAmt + bankAmt + companyAmt + insuranceAmt;
+      const unpaid = creditAmt;
+      const net = netAmount;
+      const txnStatusBase = bankAmt > 0 ? "REVIEW_REQ" : "UNVERIFIED";
+
+      let pymtStatus, txnStatus;
+
+      if (unpaid > 0 && paidAmt === 0 && unpaid === net) {
+        pymtStatus = "UNPAID";
+        txnStatus = txnStatusBase;
+      } else if (paidAmt > 0 && paidAmt === net) {
+        pymtStatus = "FULLYPAID";
+        txnStatus = txnStatusBase;
+      } else if (paidAmt > 0 && unpaid > 0 && paidAmt + unpaid === net) {
+        pymtStatus = "PARTIALPAID";
+        txnStatus = txnStatusBase;
+      } else {
+        pymtStatus = "UNPAID";
+        txnStatus = "ERROR";
+      }
 
       try {
         const existing = await prisma.incomeTxn.findFirst({ where: { billNo } });
@@ -196,10 +219,11 @@ const importIPBilling = async (req, res) => {
               discountAmount: discount,
               advAdjt: lessAdvance,
               netAmount,
-              errorReason: null,
-            }, pymtStatus, "UNVERIFIED"),
+              errorReason: txnStatus === "ERROR" ? "Payment mismatch" : null,
+            }, pymtStatus, txnStatus),
           });
           await prisma.rcvdPymt.deleteMany({ where: { incomeTxnId: existing.id } });
+          await prisma.receivable.deleteMany({ where: { incomeTxnId: existing.id } });
           updated++;
         } else {
           incomeTxn = await prisma.incomeTxn.create({
@@ -213,28 +237,32 @@ const importIPBilling = async (req, res) => {
               discountAmount: discount,
               advAdjt: lessAdvance,
               netAmount,
-            }, pymtStatus, "UNVERIFIED"),
+            }, pymtStatus, txnStatus),
           });
           inserted++;
         }
 
-        const pymtsToCreate = [];
-        if (cashAmt > 0) pymtsToCreate.push({ paymentModeId: modeMap["CASH"] || null, amount: cashAmt });
-        if (bankAmt > 0) pymtsToCreate.push({ paymentModeId: modeMap["UPI"] || null, amount: bankAmt });
-        if (creditAmt > 0) pymtsToCreate.push({ paymentModeId: modeMap["CREDIT"] || null, amount: creditAmt });
-        if (companyAmt > 0) pymtsToCreate.push({ paymentModeId: modeMap["COMPANY"] || null, amount: companyAmt });
-        if (insuranceAmt > 0) pymtsToCreate.push({ paymentModeId: modeMap["INSURANCE"] || null, amount: insuranceAmt });
-
-        for (const p of pymtsToCreate) {
-          await prisma.rcvdPymt.create({
-            data: {
-              incomeTxnId: incomeTxn.id,
-              paymentModeId: p.paymentModeId,
-              amount: p.amount,
-              paymentDate: toDateOnly(billDate),
-              paidBy: "SELF",
-            },
-          });
+        if (txnStatus !== "ERROR") {
+          if (cashAmt > 0) {
+            await prisma.rcvdPymt.create({
+              data: { incomeTxnId: incomeTxn.id, paymentModeId: modeMap["CASH"] || null, amount: cashAmt, paymentDate: toDateOnly(billDate), paidBy: "SELF" },
+            });
+          }
+          if (bankAmt > 0) {
+            await prisma.rcvdPymt.create({
+              data: { incomeTxnId: incomeTxn.id, paymentModeId: modeMap["BANK"] || null, amount: bankAmt, paymentDate: toDateOnly(billDate), paidBy: "SELF" },
+            });
+          }
+          if (companyAmt > 0) {
+            await prisma.rcvdPymt.create({
+              data: { incomeTxnId: incomeTxn.id, paymentModeId: modeMap["COMPANY"] || null, amount: companyAmt, paymentDate: toDateOnly(billDate), paidBy: "SELF" },
+            });
+          }
+          if (insuranceAmt > 0) {
+            await prisma.rcvdPymt.create({
+              data: { incomeTxnId: incomeTxn.id, paymentModeId: modeMap["INSURANCE"] || null, amount: insuranceAmt, paymentDate: toDateOnly(billDate), paidBy: "SELF" },
+            });
+          }
         }
 
         if (ipNo) {

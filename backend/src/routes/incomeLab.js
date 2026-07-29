@@ -5,6 +5,7 @@ const {
   importLabBilling, getLabDashboard, getLabTxns, getLabTxnDetail, updateLabTxnError,
   getLabDoctorSummary, getLabDoctorPayables, recordLabPayablePayment,
   getLabImportLogs, getLabImportErrors, getLabPaymentModes, updateLabPayments,
+  bulkVerifyLabTxns,
 } = require("../controllers/incomeLabController");
 const { authenticate, requireCompanyRole } = require("../middleware/auth");
 
@@ -24,5 +25,6 @@ router.get("/import-logs", getLabImportLogs);
 router.get("/import-logs/:id/errors", getLabImportErrors);
 router.post("/import", upload.single("file"), importLabBilling);
 router.put("/txns/:id/payments", updateLabPayments);
+router.post("/txns/bulk-verify", bulkVerifyLabTxns);
 
 module.exports = router;

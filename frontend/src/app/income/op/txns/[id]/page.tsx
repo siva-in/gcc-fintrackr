@@ -1,7 +1,7 @@
 "use client";
 
 import DashboardLayout from "@/components/layout/DashboardLayout";
-import { useParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useMemo } from "react";
 import api from "@/lib/api";
 import Button from "@/components/ui/Button";
@@ -45,6 +45,32 @@ const toDateInputValue = (d: string | null | undefined) => {
 
 export default function EditTransactionPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const buildBackUrl = () => {
+    const params = new URLSearchParams();
+    const search = searchParams.get("search") || "";
+    const fromDate = searchParams.get("fromDate") || "";
+    const toDate = searchParams.get("toDate") || "";
+    const pm = searchParams.get("pm") || "";
+    const docId = searchParams.get("docId") || "";
+    const txnStatus = searchParams.get("txnStatus") || "";
+    const page = searchParams.get("page") || "1";
+    const tab = searchParams.get("tab") || "transactions";
+    if (search) params.set("search", search);
+    if (fromDate) params.set("fromDate", fromDate);
+    if (toDate) params.set("toDate", toDate);
+    if (pm) params.set("pm", pm);
+    if (docId) params.set("docId", docId);
+    if (txnStatus) params.set("txnStatus", txnStatus);
+    params.set("page", page);
+    params.set("tab", tab);
+    const qs = params.toString();
+    return `/income/op${qs ? `?${qs}` : ""}`;
+  };
+
+  const goBack = () => router.push(buildBackUrl());
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   type ApiData = any;
@@ -229,7 +255,7 @@ export default function EditTransactionPage() {
 
       await api.put(`/income/txns/${id}`, payload);
       toast.success("Transaction updated");
-      window.location.href = "/income/op";
+      goBack();
     } catch {
       toast.error("Failed to update transaction");
     } finally {
@@ -246,8 +272,6 @@ export default function EditTransactionPage() {
     if (!d) return "-";
     return new Date(d).toLocaleDateString("en-GB");
   };
-
-  const goBack = () => window.location.href = "/income/op";
 
   if (loading) {
     return (
@@ -271,6 +295,7 @@ export default function EditTransactionPage() {
     const styles: Record<string, string> = {
       VERIFIED: "bg-emerald-50 text-emerald-600",
       UNVERIFIED: "bg-amber-50 text-amber-600",
+      REVIEW_REQ: "bg-red-50 text-red-600",
       ERROR: "bg-red-50 text-red-600",
       FULLYPAID: "bg-emerald-50 text-emerald-600",
       PARTIALPAID: "bg-amber-50 text-amber-600",

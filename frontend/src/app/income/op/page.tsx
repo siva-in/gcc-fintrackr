@@ -2,7 +2,7 @@
 
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/api";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
@@ -461,7 +461,7 @@ export default function IncomeOPPage() {
   };
 
   const handleSelectAll = () => {
-    const unverified = txns.filter((t) => t.txn_status !== "VERIFIED");
+    const unverified = txns.filter((t) => t.txn_status === "UNVERIFIED");
     if (selectedIds.size === unverified.length) {
       setSelectedIds(new Set());
     } else {
@@ -860,6 +860,7 @@ export default function IncomeOPPage() {
                       <option value="">All Txn Status</option>
                       <option value="VERIFIED">Verified</option>
                       <option value="UNVERIFIED">Unverified</option>
+                      <option value="REVIEW_REQ">Review Required</option>
                       <option value="ERROR">Error</option>
                     </select>
                   </div>
@@ -920,10 +921,10 @@ export default function IncomeOPPage() {
                     <thead>
                       <tr className="border-b border-slate-200/60">
                         <th className="w-10 px-2 py-3.5">
-                          {txns.some((t) => t.txn_status !== "VERIFIED") && (
+                          {txns.some((t) => t.txn_status === "UNVERIFIED") && (
                             <input
                               type="checkbox"
-                              checked={txns.filter((t) => t.txn_status !== "VERIFIED").length > 0 && selectedIds.size === txns.filter((t) => t.txn_status !== "VERIFIED").length}
+                              checked={txns.filter((t) => t.txn_status === "UNVERIFIED").length > 0 && selectedIds.size === txns.filter((t) => t.txn_status === "UNVERIFIED").length}
                               onChange={handleSelectAll}
                               className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 accent-indigo-600"
                             />
@@ -937,28 +938,29 @@ export default function IncomeOPPage() {
                         <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Payment</th>
                         <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Payment Status</th>
                         <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Txn Status</th>
-                        <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {!hasSearched ? (
-                        <tr><td colSpan={10} className="text-center py-12 text-slate-400">
+                        <tr><td colSpan={9} className="text-center py-12 text-slate-400">
                           Use the search or date filter to view transactions
                         </td></tr>
                       ) : loading ? (
-                        <tr><td colSpan={10} className="text-center py-12 text-slate-400">
+                        <tr><td colSpan={9} className="text-center py-12 text-slate-400">
                           <div className="flex items-center justify-center gap-2">
                             <div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin" />
                             Loading...
                           </div>
                         </td></tr>
                       ) : txns.length === 0 ? (
-                        <tr><td colSpan={10} className="text-center py-12 text-slate-400">No transactions found</td></tr>
+                        <tr><td colSpan={9} className="text-center py-12 text-slate-400">No transactions found</td></tr>
                       ) : (
-                        txns.map((txn) => (
+                        txns.map((txn) => {
+                          const isReviewReq = txn.txn_status === "REVIEW_REQ";
+                          return (
                           <tr key={txn.id} className={`hover:bg-slate-50/80 ${txn.txn_status === "ERROR" ? "bg-red-50/50" : ""}`}>
                             <td className="w-10 px-2 py-3.5 text-center">
-                              {txn.txn_status !== "VERIFIED" && (
+                              {txn.txn_status === "UNVERIFIED" && (
                                 <input
                                   type="checkbox"
                                   checked={selectedIds.has(txn.id)}
@@ -967,11 +969,26 @@ export default function IncomeOPPage() {
                                 />
                               )}
                             </td>
-                            <td className="px-5 py-3.5 font-medium text-slate-700">{txn.billNo}</td>
-                            <td className="px-5 py-3.5 text-slate-500 hidden sm:table-cell">{formatDate(txn.billDate)}</td>
-                            <td className="px-5 py-3.5 text-slate-700">{txn.patient?.name || "-"}</td>
-                            <td className="px-5 py-3.5 text-slate-500 hidden md:table-cell">{txn.patient?.uhid || "-"}</td>
-                            <td className="px-5 py-3.5 text-right font-medium text-slate-700">{txn.netAmount ? formatCurrency(Number(txn.netAmount)) : "-"}</td>
+                            <td
+                              className={`px-5 py-3.5 font-medium cursor-pointer hover:text-indigo-600 ${isReviewReq ? "text-red-600" : "text-slate-700"}`}
+                              onClick={() => {
+                                sessionStorage.setItem("opFilterState", JSON.stringify({ page, search, fromDate, toDate, txnPaymentFilter, txnDoctorFilter, txnStatusFilter, activeTab }));
+                                const p = new URLSearchParams();
+                                if (search) p.set("search", search);
+                                if (fromDate) p.set("fromDate", fromDate);
+                                if (toDate) p.set("toDate", toDate);
+                                if (txnPaymentFilter) p.set("pm", txnPaymentFilter);
+                                if (txnDoctorFilter) p.set("docId", txnDoctorFilter);
+                                if (txnStatusFilter) p.set("txnStatus", txnStatusFilter);
+                                p.set("page", String(page));
+                                p.set("tab", activeTab);
+                                router.push(`/income/op/txns/${txn.id}?${p.toString()}`);
+                              }}
+                            >{txn.billNo}</td>
+                            <td className={`px-5 py-3.5 hidden sm:table-cell ${isReviewReq ? "text-red-600" : "text-slate-500"}`}>{formatDate(txn.billDate)}</td>
+                            <td className={`px-5 py-3.5 ${isReviewReq ? "text-red-600" : "text-slate-700"}`}>{txn.patient?.name || "-"}</td>
+                            <td className={`px-5 py-3.5 hidden md:table-cell ${isReviewReq ? "text-red-600" : "text-slate-500"}`}>{txn.patient?.uhid || "-"}</td>
+                            <td className={`px-5 py-3.5 text-right font-medium ${isReviewReq ? "text-red-600" : "text-slate-700"}`}>{txn.netAmount ? formatCurrency(Number(txn.netAmount)) : "-"}</td>
                             <td className="px-5 py-3.5">
                               <div className="flex flex-wrap gap-1">
                                 {txn.rcvdPymts.map((p, i) => (
@@ -983,7 +1000,7 @@ export default function IncomeOPPage() {
                                 {txn.rcvdPymts.length === 0 && <span className="text-xs text-slate-400">-</span>}
                               </div>
                             </td>
-                            <td className="px-5 py-3.5">
+                            <td className={`px-5 py-3.5 ${isReviewReq ? "text-red-600" : ""}`}>
                               <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium ${
                                 txn.pymt_status === "FULLYPAID" ? "bg-emerald-50 text-emerald-600" :
                                 txn.pymt_status === "PARTIALPAID" ? "bg-amber-50 text-amber-600" :
@@ -995,26 +1012,16 @@ export default function IncomeOPPage() {
                             <td className="px-5 py-3.5">
                               <div className="flex flex-col gap-1">
                                 <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium ${txn.txn_status === "VERIFIED" ? "bg-emerald-50 text-emerald-600" : txn.txn_status === "UNVERIFIED" ? "bg-amber-50 text-amber-600" : "bg-red-50 text-red-600"}`}>
-                                  {txn.txn_status}
+                                  {txn.txn_status === "REVIEW_REQ" ? "REVIEW REQ" : txn.txn_status}
                                 </span>
                                 {txn.txn_status === "ERROR" && txn.errorReason && (
                                   <span className="text-[10px] text-red-500 max-w-[150px] truncate" title={txn.errorReason}>{txn.errorReason}</span>
                                 )}
                               </div>
                             </td>
-                            <td className="px-5 py-3.5 text-center">
-                              <button
-                                onClick={() => {
-                                  sessionStorage.setItem("opFilterState", JSON.stringify({ page, search, fromDate, toDate, txnPaymentFilter, txnDoctorFilter, txnStatusFilter, activeTab }));
-                                  router.push(`/income/op/txns/${txn.id}`);
-                                }}
-                                className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-medium hover:bg-indigo-100 transition-colors"
-                              >
-                                <Eye size={14} /> Edit
-                              </button>
-                            </td>
                           </tr>
-                        ))
+                          );
+                        })
                       )}
                     </tbody>
                   </table>

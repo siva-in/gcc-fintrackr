@@ -62,20 +62,21 @@ const getRowValuesAsText = (row, headers, headerIdx) => {
 
 const toDateOnly = (dateStr) => (dateStr ? new Date(`${dateStr}T00:00:00.000Z`) : null);
 
-const addDays = (dateStr, days) => {
-  const d = new Date(dateStr);
-  d.setDate(d.getDate() + days);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${dd}`;
-};
-
 const withIncomeTxnStatusData = (data, pymtStatus, txnStatus) => {
   const next = { ...data };
   if (pymtStatus != null) next.pymt_status = pymtStatus;
   if (txnStatus != null) next.txn_status = txnStatus;
   return next;
+};
+
+const addOneMonth = (dateStr) => {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  d.setMonth(d.getMonth() + 1);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
 };
 
 const findHeaderRow = (rows, requiredHeaders) => {
@@ -116,24 +117,6 @@ const getFirstDataBillNo = (rows, billNoIdx, snoIdx) => {
 
 const startsWithPrefix = (value, prefix) => String(value || "").trim().toUpperCase().startsWith(prefix);
 
-// Normalizes a doctor name string to uppercase alphanumerics only, for tolerant matching
-// between the free-text "Dr.Name" column in Lab bills and the Doctor master name/degree fields.
-const normalizeName = (value) => String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-
-const matchDoctor = (drNameRaw, doctors) => {
-  const drName = normalizeName(drNameRaw);
-  if (!drName || drName === "SELF") return null;
-
-  for (const doc of doctors) {
-    const docNorm = normalizeName(doc.name);
-    const docCore = docNorm.replace(/^DR/, "");
-    if (docCore && (drName.includes(docNorm) || drName.includes(docCore))) {
-      return doc.id;
-    }
-  }
-  return null;
-};
-
 const importLabBilling = async (req, res) => {
   let importLog = null;
   try {
@@ -156,8 +139,6 @@ const importLabBilling = async (req, res) => {
     const allPaymentModes = await prisma.paymentMode.findMany();
     const modeMap = {};
     allPaymentModes.forEach((pm) => { modeMap[pm.code] = pm.id; });
-
-    const allDoctors = await prisma.doctor.findMany({ where: { isActive: true }, select: { id: true, name: true } });
 
     importLog = await prisma.importLog.create({
       data: { fileName: req.file.originalname, fileType: "LAB", totalRecords: 0, inserted: 0, updated: 0, skipped: 0, failed: 0, createdBy: req.user?.id || null },
@@ -190,17 +171,14 @@ const importLabBilling = async (req, res) => {
       try {
         const uhid = cleanValue(row[headerIdx["UHID No"]]);
         const name = cleanValue(row[headerIdx["Patient Name"]]);
-        const drName = cleanValue(row[headerIdx["Dr.Name"]]);
         const billDate = parseDate(row[headerIdx["Date"]]);
         const amount = parseDecimal(row[headerIdx["Amount"]]) || 0;
         const discAmt = parseDecimal(row[headerIdx["Disc Amt"]]) || 0;
         const netAmount = parseDecimal(row[headerIdx["Net Amount"]]) || 0;
-        const referAmt = parseDecimal(row[headerIdx["Refer Amount"]]) || 0;
         const cashAmt = parseDecimal(row[headerIdx["Cash Amount"]]) || 0;
         const bankAmt = parseDecimal(row[headerIdx["Bank Amount"]]) || 0;
         const creditAmt = parseDecimal(row[headerIdx["Credit Amount"]]) || 0;
         const creditStatus = cleanValue(row[headerIdx["Credit Status"]]);
-        const isReceived = creditStatus && creditStatus.toLowerCase() === "received";
 
         let patientId = null;
         if (uhid) {
@@ -230,14 +208,30 @@ const importLabBilling = async (req, res) => {
           continue;
         }
 
-        const pymtStatus = isReceived ? "FULLYPAID" : "UNPAID";
-
-        let txnStatus = "VERIFIED";
-        if (bankAmt > 0 || creditAmt > 0) txnStatus = "UNVERIFIED";
-
         const existing = await prisma.incomeTxn.findFirst({ where: { billNo } });
 
         let incomeTxn;
+        const txnStatusBase = bankAmt > 0 ? "REVIEW_REQ" : "UNVERIFIED";
+        const paidAmt = cashAmt + bankAmt;
+        const unpaid = creditAmt;
+        const net = netAmount;
+
+        let pymtStatus, txnStatus;
+
+        if (unpaid > 0 && paidAmt === 0 && unpaid === net) {
+          pymtStatus = "UNPAID";
+          txnStatus = txnStatusBase;
+        } else if (paidAmt > 0 && paidAmt === net) {
+          pymtStatus = "FULLYPAID";
+          txnStatus = txnStatusBase;
+        } else if (paidAmt > 0 && unpaid > 0 && paidAmt + unpaid === net) {
+          pymtStatus = "PARTIALPAID";
+          txnStatus = txnStatusBase;
+        } else {
+          pymtStatus = "UNPAID";
+          txnStatus = "ERROR";
+        }
+
         if (existing) {
           incomeTxn = await prisma.incomeTxn.update({
             where: { id: existing.id },
@@ -247,10 +241,11 @@ const importLabBilling = async (req, res) => {
               grossAmount: amount,
               discountAmount: discAmt,
               netAmount,
-              errorReason: null,
+              errorReason: txnStatus === "ERROR" ? "Payment mismatch" : null,
             }, pymtStatus, txnStatus),
           });
           await prisma.rcvdPymt.deleteMany({ where: { incomeTxnId: existing.id } });
+          await prisma.receivable.deleteMany({ where: { incomeTxnId: existing.id } });
           updated++;
         } else {
           incomeTxn = await prisma.incomeTxn.create({
@@ -269,57 +264,39 @@ const importLabBilling = async (req, res) => {
           inserted++;
         }
 
-        const pymtsToCreate = [];
-        if (cashAmt > 0) pymtsToCreate.push({ paymentModeId: modeMap["CASH"] || null, amount: cashAmt });
-        if (bankAmt > 0) pymtsToCreate.push({ paymentModeId: modeMap["BANK"] || null, amount: bankAmt });
-        if (creditAmt > 0) pymtsToCreate.push({ paymentModeId: modeMap["CREDIT"] || null, amount: creditAmt });
+        if (txnStatus !== "ERROR") {
+          const pymtsToCreate = [];
+          if (cashAmt > 0) pymtsToCreate.push({ paymentModeId: modeMap["CASH"] || null, amount: cashAmt });
+          if (bankAmt > 0) pymtsToCreate.push({ paymentModeId: modeMap["BANK"] || null, amount: bankAmt });
 
-        for (const p of pymtsToCreate) {
-          await prisma.rcvdPymt.create({
-            data: {
-              incomeTxnId: incomeTxn.id,
-              paymentModeId: p.paymentModeId,
-              amount: p.amount,
-              paymentDate: toDateOnly(billDate),
-              transactionNo: null,
-              bankName: null,
-              paidBy: "SELF",
-              remarks: null,
-            },
-          });
-        }
-
-        // Referral doctor payable: matched by tolerant name matching against Doctor master.
-        if (referAmt > 0 && drName) {
-          const doctorId = matchDoctor(drName, allDoctors);
-          if (doctorId) {
-            const dueDate = billDate ? addDays(billDate, 15) : null;
-            const existingPayable = await prisma.payable.findFirst({
-              where: { incomeTxnId: incomeTxn.id, drId: doctorId, partyType: "DOCTOR" },
+          for (const p of pymtsToCreate) {
+            await prisma.rcvdPymt.create({
+              data: {
+                incomeTxnId: incomeTxn.id,
+                paymentModeId: p.paymentModeId,
+                amount: p.amount,
+                paymentDate: toDateOnly(billDate),
+                transactionNo: null,
+                bankName: null,
+                paidBy: "SELF",
+                remarks: null,
+              },
             });
-            if (existingPayable) {
-              await prisma.payable.update({
-                where: { id: existingPayable.id },
-                data: { billDate: toDateOnly(billDate) || new Date(), dueDate: toDateOnly(dueDate), billedAmt: referAmt, balanceAmt: referAmt },
-              });
-            } else {
-              await prisma.payable.create({
-                data: {
-                  partyType: "DOCTOR",
-                  doctor: { connect: { id: doctorId } },
-                  incomeTxn: { connect: { id: incomeTxn.id } },
-                  billDate: toDateOnly(billDate) || new Date(),
-                  dueDate: toDateOnly(dueDate),
-                  billedAmt: referAmt,
-                  balanceAmt: referAmt,
-                  status: "PENDING",
-                  remarks: name || null,
-                  createdBy: req.user?.username || null,
-                },
-              });
-            }
-          } else {
-            skipped++;
+          }
+
+          if (unpaid > 0) {
+            await prisma.receivable.create({
+              data: {
+                arType: "PATIENT",
+                patId: patientId,
+                incomeTxnId: incomeTxn.id,
+                billDate: toDateOnly(billDate) || new Date(),
+                dueDate: toDateOnly(addOneMonth(billDate)),
+                dueAmt: unpaid,
+                balanceAmt: unpaid,
+                status: "PENDING",
+              },
+            });
           }
         }
       } catch (err) {
@@ -484,6 +461,7 @@ const getLabTxnDetail = async (req, res) => {
         incomeSource: true,
         rcvdPymts: { include: { paymentMode: true } },
         payables: { include: { doctor: true } },
+        receivables: true,
       },
     });
     if (!txn) return res.status(404).json({ message: "Transaction not found" });
@@ -703,6 +681,7 @@ const updateLabPayments = async (req, res) => {
     if (!txn) return res.status(404).json({ message: "Transaction not found" });
 
     await prisma.rcvdPymt.deleteMany({ where: { incomeTxnId: txn.id } });
+    await prisma.receivable.deleteMany({ where: { incomeTxnId: txn.id, arType: "PATIENT" } });
 
     let cashTotal = 0, bankTotal = 0, creditTotal = 0;
     let creditUnpaid = false;
@@ -714,24 +693,28 @@ const updateLabPayments = async (req, res) => {
       const mode = await prisma.paymentMode.findUnique({ where: { id: parseInt(p.paymentModeId) } });
       if (!mode) continue;
 
-      await prisma.rcvdPymt.create({
-        data: {
-          incomeTxnId: txn.id,
-          paymentModeId: parseInt(p.paymentModeId),
-          amount: amt,
-          paymentDate: p.paymentDate ? toDateOnly(p.paymentDate) : txn.billDate,
-          transactionNo: p.transactionNo || null,
-          bankName: p.bankName || null,
-          paidBy: p.paidBy || "SELF",
-          remarks: p.remarks || null,
-        },
-      });
+      const isCreditPending = mode.code === "CREDIT" && (p.creditStatus === "PENDING" || !p.isCreditPaid);
+
+      if (!isCreditPending) {
+        await prisma.rcvdPymt.create({
+          data: {
+            incomeTxnId: txn.id,
+            paymentModeId: parseInt(p.paymentModeId),
+            amount: amt,
+            paymentDate: p.paymentDate ? toDateOnly(p.paymentDate) : txn.billDate,
+            transactionNo: p.transactionNo || null,
+            bankName: p.bankName || null,
+            paidBy: p.paidBy || "SELF",
+            remarks: p.remarks || null,
+          },
+        });
+      }
 
       if (mode.code === "CASH") cashTotal += amt;
       else if (mode.code === "BANK") bankTotal += amt;
       else if (mode.code === "CREDIT") {
         creditTotal += amt;
-        if (p.creditStatus === "PENDING" || !p.isCreditPaid) creditUnpaid = true;
+        if (isCreditPending) creditUnpaid = true;
       }
     }
 
@@ -741,45 +724,24 @@ const updateLabPayments = async (req, res) => {
     else if (totalPaid > 0) pymtStatus = "PARTIALPAID";
 
     let txnStatus = "VERIFIED";
-    if (bankTotal > 0 || creditTotal > 0) txnStatus = "UNVERIFIED";
 
     await prisma.incomeTxn.update({
       where: { id: txn.id },
       data: withIncomeTxnStatusData({}, pymtStatus, txnStatus),
     });
 
-    if (creditTotal > 0 && creditUnpaid && txn.patientId) {
-      const existingRcvl = await prisma.receivable.findFirst({
-        where: { incomeTxnId: txn.id, arType: "PATIENT" },
-      });
-      if (existingRcvl) {
-        await prisma.receivable.update({
-          where: { id: existingRcvl.id },
-          data: {
-            dueAmt: creditTotal,
-            balanceAmt: creditTotal,
-            status: "PENDING",
-          },
-        });
-      } else {
-        await prisma.receivable.create({
-          data: {
-            arType: "PATIENT",
-            patId: txn.patientId,
-            incomeTxnId: txn.id,
-            billDate: txn.billDate || new Date(),
-            dueAmt: creditTotal,
-            balanceAmt: creditTotal,
-            status: "PENDING",
-          },
-        });
-      }
-    }
-
-    if (creditTotal > 0 && !creditUnpaid) {
-      await prisma.receivable.updateMany({
-        where: { incomeTxnId: txn.id, arType: "PATIENT" },
-        data: { status: "PAID", balanceAmt: 0 },
+    if (creditUnpaid && txn.patientId) {
+      await prisma.receivable.create({
+        data: {
+          arType: "PATIENT",
+          patId: txn.patientId,
+          incomeTxnId: txn.id,
+          billDate: txn.billDate || new Date(),
+          dueDate: toDateOnly(addOneMonth(txn.billDate)),
+          dueAmt: creditTotal,
+          balanceAmt: creditTotal,
+          status: "PENDING",
+        },
       });
     }
 
@@ -799,8 +761,38 @@ const updateLabPayments = async (req, res) => {
   }
 };
 
+const bulkVerifyLabTxns = async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ message: "ids array is required" });
+    }
+
+    const invalid = await prisma.incomeTxn.findMany({
+      where: { id: { in: ids.map(Number) }, txn_status: { in: ["ERROR", "REVIEW_REQ"] } },
+      select: { id: true, billNo: true, txn_status: true },
+    });
+    if (invalid.length > 0) {
+      return res.status(400).json({
+        message: `Cannot verify transactions in ERROR or REVIEW_REQ status: ${invalid.map((t) => `${t.billNo} (${t.txn_status})`).join(", ")}`,
+      });
+    }
+
+    const result = await prisma.incomeTxn.updateMany({
+      where: { id: { in: ids.map(Number) }, txn_status: "UNVERIFIED" },
+      data: { txn_status: "VERIFIED" },
+    });
+
+    res.json({ message: `${result.count} transaction(s) verified` });
+  } catch (error) {
+    console.error("BulkVerifyLabTxns error:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
 module.exports = {
   importLabBilling, getLabDashboard, getLabTxns, getLabTxnDetail, updateLabTxnError,
   getLabDoctorSummary, getLabDoctorPayables, recordLabPayablePayment,
   getLabImportLogs, getLabImportErrors, getLabPaymentModes, updateLabPayments,
+  bulkVerifyLabTxns,
 };
