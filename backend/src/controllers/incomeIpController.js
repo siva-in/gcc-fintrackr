@@ -266,17 +266,12 @@ const importIPBilling = async (req, res) => {
         }
 
         if (ipNo) {
-          const ipAdm = await prisma.iPAdm.upsert({
-            where: { ipNumber: ipNo },
-            update: {},
-            create: { ipNumber: ipNo },
-          });
-
-          await prisma.iPDtl.upsert({
-            where: { incomeTxnId: incomeTxn.id },
-            update: { ipAdmId: ipAdm.id },
-            create: { ipAdmId: ipAdm.id, incomeTxnId: incomeTxn.id },
-          });
+          const existing = await prisma.iPAdm.findFirst({ where: { ipNo } });
+          if (existing) {
+            await prisma.iPAdm.update({ where: { id: existing.id }, data: { incomeTxnId: incomeTxn.id } });
+          } else {
+            await prisma.iPAdm.create({ data: { ipNo, incomeTxnId: incomeTxn.id } });
+          }
         }
       } catch (err) {
         failed++;
@@ -390,9 +385,9 @@ const importIPDetailReport = async (req, res) => {
 
         // Keep IP Admission's patient in sync once known
         if (patient) {
-          const ipDtl = await prisma.iPDtl.findUnique({ where: { incomeTxnId: incomeTxn.id } });
-          if (ipDtl) {
-            await prisma.iPAdm.update({ where: { id: ipDtl.ipAdmId }, data: { patientId: patient.id } });
+          const ipAdm = await prisma.iPAdm.findUnique({ where: { incomeTxnId: incomeTxn.id } });
+          if (ipAdm) {
+            await prisma.iPAdm.update({ where: { id: ipAdm.id }, data: { patientId: patient.id } });
           }
         }
       }

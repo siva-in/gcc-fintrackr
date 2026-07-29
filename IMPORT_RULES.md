@@ -12,21 +12,21 @@ Source column: 13 columns
 
 ### Expected Headers
 
-| # | Column |
-|---|--------|
-| 1 | S.No |
-| 2 | Date |
-| 3 | Bill No |
-| 4 | UHID No |
-| 5 | Patient Name |
-| 6 | Terms |
-| 7 | Net Amount |
-| 8 | Mobile No |
-| 9 | Cash_Amt |
-| 10 | Bank Amt |
-| 11 | Credit Amt |
-| 12 | Remarks |
-| 13 | Credit status |
+| #   | Column        |
+| --- | ------------- |
+| 1   | S.No          |
+| 2   | Date          |
+| 3   | Bill No       |
+| 4   | UHID No       |
+| 5   | Patient Name  |
+| 6   | Terms         |
+| 7   | Net Amount    |
+| 8   | Mobile No     |
+| 9   | Cash_Amt      |
+| 10  | Bank Amt      |
+| 11  | Credit Amt    |
+| 12  | Remarks       |
+| 13  | Credit status |
 
 ### Header Detection
 
@@ -34,13 +34,13 @@ Scans first 10 rows — looks for a row containing **both** "Bill No" and "Patie
 
 ### Patient Matching
 
-| Scenario | Behavior |
-|---|---|
-| UHID provided, found in DB | Uses existing patient |
-| UHID provided, not found in DB | **FAILS** with error |
-| No UHID, name provided, found in DB | Uses existing patient |
-| No UHID, name provided, not found | **Auto-creates** with UHID `FT_NNNN` and mobile from row |
-| Neither UHID nor name | **FAILS** with error |
+| Scenario                            | Behavior                                                 |
+| ----------------------------------- | -------------------------------------------------------- |
+| UHID provided, found in DB          | Uses existing patient                                    |
+| UHID provided, not found in DB      | **FAILS** with error                                     |
+| No UHID, name provided, found in DB | Uses existing patient                                    |
+| No UHID, name provided, not found   | **Auto-creates** with UHID `FT_NNNN` and mobile from row |
+| Neither UHID nor name               | **FAILS** with error                                     |
 
 ### Terms Validation
 
@@ -55,12 +55,12 @@ paidAmt = cashAmt + bankAmt
 unpaid  = creditAmt
 ```
 
-| Condition | pymt_status | txn_status |
-|---|---|---|
-| `unpaid > 0` AND `paidAmt == 0` AND `unpaid == net` | UNPAID | UNVERIFIED or REVIEW_REQ |
-| `paidAmt > 0` AND `paidAmt == net` | FULLYPAID | UNVERIFIED or REVIEW_REQ |
-| `paidAmt > 0` AND `unpaid > 0` AND `paidAmt + unpaid == net` | PARTIALPAID | UNVERIFIED or REVIEW_REQ |
-| Any other combination | UNPAID | **ERROR** ("Payment mismatch") |
+| Condition                                                    | pymt_status | txn_status                     |
+| ------------------------------------------------------------ | ----------- | ------------------------------ |
+| `unpaid > 0` AND `paidAmt == 0` AND `unpaid == net`          | UNPAID      | UNVERIFIED or REVIEW_REQ       |
+| `paidAmt > 0` AND `paidAmt == net`                           | FULLYPAID   | UNVERIFIED or REVIEW_REQ       |
+| `paidAmt > 0` AND `unpaid > 0` AND `paidAmt + unpaid == net` | PARTIALPAID | UNVERIFIED or REVIEW_REQ       |
+| Any other combination                                        | UNPAID      | **ERROR** ("Payment mismatch") |
 
 ### REVIEW_REQ Status
 
@@ -72,17 +72,18 @@ If Bank Amt > 0, the transaction goes to `REVIEW_REQ` status (needs manual revie
 
 ### Payment Rules
 
-| Amount > 0 | Payment Mode | Record Type |
-|---|---|---|
-| Cash_Amt | CASH | rcvdPymt |
-| Bank Amt | BANK | rcvdPymt |
-| Credit Amt | — | **Receivable** (PATIENT, due date = bill date + 1 month) |
+| Amount > 0 | Payment Mode | Record Type                                              |
+| ---------- | ------------ | -------------------------------------------------------- |
+| Cash_Amt   | CASH         | rcvdPymt                                                 |
+| Bank Amt   | BANK         | rcvdPymt                                                 |
+| Credit Amt | —            | **Receivable** (PATIENT, due date = bill date + 1 month) |
 
 **Note:** Bank payments now use `"BANK"` mode code (previously `"UPI"`).
 
 ### Receivable Creation
 
 For `creditAmt > 0`, a `Receivable` record is created:
+
 - `arType = "PATIENT"`
 - `dueDate` = bill date + 1 month
 - `status = "PENDING"`
@@ -109,18 +110,18 @@ Source column: 10 columns
 
 ### Expected Headers
 
-| # | Column |
-|---|--------|
-| 1 | S.No |
-| 2 | Bill Date |
-| 3 | Bill No |
-| 4 | UHID |
-| 5 | Patient Name |
-| 6 | Description |
-| 7 | Amount |
-| 8 | age |
-| 9 | Sex |
-| 10 | Consult Dr |
+| #   | Column       |
+| --- | ------------ |
+| 1   | S.No         |
+| 2   | Bill Date    |
+| 3   | Bill No      |
+| 4   | UHID         |
+| 5   | Patient Name |
+| 6   | Description  |
+| 7   | Amount       |
+| 8   | age          |
+| 9   | Sex          |
+| 10  | Consult Dr   |
 
 ### Rules
 
@@ -145,24 +146,24 @@ Source column: 16 columns
 
 ### Expected Headers
 
-| # | Column |
-|---|--------|
-| 1 | S.No |
-| 2 | Date |
-| 3 | Bill No |
-| 4 | IP No |
-| 5 | Patient Name |
-| 6 | Terms |
-| 7 | Total Amount |
-| 8 | Discount |
-| 9 | Bill Amount |
-| 10 | Less Advance |
-| 11 | Net Amount |
-| 12 | cash_amount |
-| 13 | bank_amount |
-| 14 | credit_amount |
-| 15 | company_amount |
-| 16 | insurance_amount |
+| #   | Column           |
+| --- | ---------------- |
+| 1   | S.No             |
+| 2   | Date             |
+| 3   | Bill No          |
+| 4   | IP No            |
+| 5   | Patient Name     |
+| 6   | Terms            |
+| 7   | Total Amount     |
+| 8   | Discount         |
+| 9   | Bill Amount      |
+| 10  | Less Advance     |
+| 11  | Net Amount       |
+| 12  | cash_amount      |
+| 13  | bank_amount      |
+| 14  | credit_amount    |
+| 15  | company_amount   |
+| 16  | insurance_amount |
 
 ### Header Detection
 
@@ -185,12 +186,12 @@ paidAmt = cashAmt + bankAmt + companyAmt + insuranceAmt
 unpaid  = creditAmt
 ```
 
-| Condition | pymt_status | txn_status |
-|---|---|---|
-| `unpaid > 0` AND `paidAmt == 0` AND `unpaid == net` | UNPAID | UNVERIFIED or REVIEW_REQ |
-| `paidAmt > 0` AND `paidAmt == net` | FULLYPAID | UNVERIFIED or REVIEW_REQ |
-| `paidAmt > 0` AND `unpaid > 0` AND `paidAmt + unpaid == net` | PARTIALPAID | UNVERIFIED or REVIEW_REQ |
-| Any other combination | UNPAID | **ERROR** ("Payment mismatch") |
+| Condition                                                    | pymt_status | txn_status                     |
+| ------------------------------------------------------------ | ----------- | ------------------------------ |
+| `unpaid > 0` AND `paidAmt == 0` AND `unpaid == net`          | UNPAID      | UNVERIFIED or REVIEW_REQ       |
+| `paidAmt > 0` AND `paidAmt == net`                           | FULLYPAID   | UNVERIFIED or REVIEW_REQ       |
+| `paidAmt > 0` AND `unpaid > 0` AND `paidAmt + unpaid == net` | PARTIALPAID | UNVERIFIED or REVIEW_REQ       |
+| Any other combination                                        | UNPAID      | **ERROR** ("Payment mismatch") |
 
 ### REVIEW_REQ Status
 
@@ -202,13 +203,13 @@ If bank_amount > 0, the transaction goes to `REVIEW_REQ` status (needs manual re
 
 ### Payment Rules
 
-| Amount > 0 | Payment Mode | Record Type |
-|---|---|---|
-| cash_amount | CASH | rcvdPymt |
-| bank_amount | **BANK** | rcvdPymt |
-| credit_amount | — | **Receivable** (PATIENT, due date = bill date + 1 month) — only created during review step since patient is linked later |
-| company_amount | COMPANY | rcvdPymt |
-| insurance_amount | INSURANCE | rcvdPymt |
+| Amount > 0       | Payment Mode | Record Type                                                                                                              |
+| ---------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| cash_amount      | CASH         | rcvdPymt                                                                                                                 |
+| bank_amount      | **BANK**     | rcvdPymt                                                                                                                 |
+| credit_amount    | —            | **Receivable** (PATIENT, due date = bill date + 1 month) — only created during review step since patient is linked later |
+| company_amount   | COMPANY      | rcvdPymt                                                                                                                 |
+| insurance_amount | INSURANCE    | rcvdPymt                                                                                                                 |
 
 **Note:** Bank payments now use `"BANK"` mode code (previously `"UPI"`).
 
@@ -237,18 +238,18 @@ Source column: 10 columns
 
 ### Expected Headers
 
-| # | Column |
-|---|--------|
-| 1 | S.No |
-| 2 | Bill Date |
-| 3 | Bill No |
-| 4 | UHID |
-| 5 | Patient Name |
-| 6 | Description |
-| 7 | Amount |
-| 8 | age |
-| 9 | Sex |
-| 10 | Consult Dr |
+| #   | Column       |
+| --- | ------------ |
+| 1   | S.No         |
+| 2   | Bill Date    |
+| 3   | Bill No      |
+| 4   | UHID         |
+| 5   | Patient Name |
+| 6   | Description  |
+| 7   | Amount       |
+| 8   | age          |
+| 9   | Sex          |
+| 10  | Consult Dr   |
 
 ### Rules
 
@@ -259,12 +260,12 @@ Source column: 10 columns
 
 This is where IP patients are linked:
 
-| Scenario | Behavior |
-|---|---|
-| UHID provided, found in DB | Links patient to transaction |
-| UHID provided, not found | **Auto-creates** patient with given UHID and name (or "Unknown") |
-| Patient previously null on txn | Updates `patientId` |
-| Txn was `VERIFIED` before linking | Resets to `UNVERIFIED` |
+| Scenario                          | Behavior                                                         |
+| --------------------------------- | ---------------------------------------------------------------- |
+| UHID provided, found in DB        | Links patient to transaction                                     |
+| UHID provided, not found          | **Auto-creates** patient with given UHID and name (or "Unknown") |
+| Patient previously null on txn    | Updates `patientId`                                              |
+| Txn was `VERIFIED` before linking | Resets to `UNVERIFIED`                                           |
 
 ### Payables
 
@@ -284,25 +285,25 @@ Source column: 17 columns
 
 ### Expected Headers
 
-| # | Column |
-|---|--------|
-| 1 | S.No |
-| 2 | Bill No |
-| 3 | Date |
-| 4 | UHID No |
-| 5 | Patient Name |
-| 6 | Dr.Name |
-| 7 | Terms |
-| 8 | Amount |
-| 9 | Disc Amt |
-| 10 | Net Amount |
-| 11 | Refer Amount |
-| 12 | Cash Amount |
-| 13 | Bank Amount |
-| 14 | Credit Amount |
-| 15 | Credit Status |
-| 16 | Lab Report No |
-| 17 | Report Status |
+| #   | Column        |
+| --- | ------------- |
+| 1   | S.No          |
+| 2   | Bill No       |
+| 3   | Date          |
+| 4   | UHID No       |
+| 5   | Patient Name  |
+| 6   | Dr.Name       |
+| 7   | Terms         |
+| 8   | Amount        |
+| 9   | Disc Amt      |
+| 10  | Net Amount    |
+| 11  | Refer Amount  |
+| 12  | Cash Amount   |
+| 13  | Bank Amount   |
+| 14  | Credit Amount |
+| 15  | Credit Status |
+| 16  | Lab Report No |
+| 17  | Report Status |
 
 ### Header Detection
 
@@ -312,12 +313,12 @@ Same as IP: first 10 rows, exact match for "bill no" and "patient name".
 
 Same as OP:
 
-| Scenario | Behavior |
-|---|---|
-| UHID provided, found in DB | Uses existing |
-| UHID provided, not found | **FAILS** |
+| Scenario                          | Behavior                                          |
+| --------------------------------- | ------------------------------------------------- |
+| UHID provided, found in DB        | Uses existing                                     |
+| UHID provided, not found          | **FAILS**                                         |
 | No UHID, name provided, not found | **Auto-creates** with `FT_NNNN` (no mobile saved) |
-| Neither | **FAILS** |
+| Neither                           | **FAILS**                                         |
 
 ### Terms Validation
 
@@ -332,12 +333,12 @@ paidAmt = cashAmt + bankAmt
 unpaid  = creditAmt
 ```
 
-| Condition | pymt_status | txn_status |
-|---|---|---|
-| `unpaid > 0` AND `paidAmt == 0` AND `unpaid == net` | UNPAID | UNVERIFIED or REVIEW_REQ |
-| `paidAmt > 0` AND `paidAmt == net` | FULLYPAID | UNVERIFIED or REVIEW_REQ |
-| `paidAmt > 0` AND `unpaid > 0` AND `paidAmt + unpaid == net` | PARTIALPAID | UNVERIFIED or REVIEW_REQ |
-| Any other combination | UNPAID | **ERROR** ("Payment mismatch") |
+| Condition                                                    | pymt_status | txn_status                     |
+| ------------------------------------------------------------ | ----------- | ------------------------------ |
+| `unpaid > 0` AND `paidAmt == 0` AND `unpaid == net`          | UNPAID      | UNVERIFIED or REVIEW_REQ       |
+| `paidAmt > 0` AND `paidAmt == net`                           | FULLYPAID   | UNVERIFIED or REVIEW_REQ       |
+| `paidAmt > 0` AND `unpaid > 0` AND `paidAmt + unpaid == net` | PARTIALPAID | UNVERIFIED or REVIEW_REQ       |
+| Any other combination                                        | UNPAID      | **ERROR** ("Payment mismatch") |
 
 ### REVIEW_REQ Status
 
@@ -349,14 +350,15 @@ If Bank Amount > 0, the transaction goes to `REVIEW_REQ` status (needs manual re
 
 ### Payment Rules
 
-| Amount > 0 | Payment Mode | Record Type |
-|---|---|---|
-| Cash Amount | CASH | rcvdPymt |
-| Bank Amount | BANK | rcvdPymt |
+| Amount > 0  | Payment Mode | Record Type |
+| ----------- | ------------ | ----------- |
+| Cash Amount | CASH         | rcvdPymt    |
+| Bank Amount | BANK         | rcvdPymt    |
 
 ### Receivable Creation
 
 For `creditAmt > 0`, a `Receivable` record is created:
+
 - `arType = "PATIENT"`
 - `dueDate` = bill date + 1 month
 - `status = "PENDING"`
@@ -373,15 +375,15 @@ Same pattern: existing billNo → update + delete & recreate payments and receiv
 
 ## Summary
 
-| Feature | OP (OPD) | OP Detail | IP (IPD) | IP Detail | Lab |
-|---|---|---|---|---|---|---|
-| **Bill prefix** | OPB | OPB | IPB | IPB | LB |
-| **Required columns** | 13 | 10 | 16 | 10 | 17 |
-| **Terms validation** | No | N/A | No | N/A | No |
-| **Patient auto-create** | Name only | N/A | Never | UHID or name | Name only |
-| **Payment modes** | CASH, BANK | N/A | CASH, BANK, COMPANY, INSURANCE | N/A | CASH, BANK |
-| **Receivables created** | **Yes** (credit) | No | No (credit handled in review) | No | **Yes** (credit) |
-| **Payables created** | No | **Yes** (doctor) | No | No | No |
-| **Can get ERROR** | **Yes** | **Yes** | **Yes** | No | **Yes** |
-| **REVIEW_REQ possible** | **Yes** | No | **Yes** | No | **Yes** |
-| **IP Admission tracking** | No | No | **Yes** | **Yes** | No |
+| Feature                   | OP (OPD)         | OP Detail        | IP (IPD)                       | IP Detail    | Lab              |
+| ------------------------- | ---------------- | ---------------- | ------------------------------ | ------------ | ---------------- |
+| **Bill prefix**           | OPB              | OPB              | IPB                            | IPB          | LB               |
+| **Required columns**      | 13               | 10               | 16                             | 10           | 17               |
+| **Terms validation**      | No               | N/A              | No                             | N/A          | No               |
+| **Patient auto-create**   | Name only        | N/A              | Never                          | UHID or name | Name only        |
+| **Payment modes**         | CASH, BANK       | N/A              | CASH, BANK, COMPANY, INSURANCE | N/A          | CASH, BANK       |
+| **Receivables created**   | **Yes** (credit) | No               | No (credit handled in review)  | No           | **Yes** (credit) |
+| **Payables created**      | No               | **Yes** (doctor) | No                             | No           | No               |
+| **Can get ERROR**         | **Yes**          | **Yes**          | **Yes**                        | No           | **Yes**          |
+| **REVIEW_REQ possible**   | **Yes**          | No               | **Yes**                        | No           | **Yes**          |
+| **IP Admission tracking** | No               | No               | **Yes**                        | **Yes**      | No               |

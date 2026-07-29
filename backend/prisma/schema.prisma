@@ -210,6 +210,8 @@ enum IncomeStatus {
   FULLYPAID
   PARTIALPAID
   UNPAID
+  UNREALISED
+  REALISED
 }
 
 enum TxnStatus {
@@ -303,7 +305,6 @@ model IncomeTxn {
   payables     Payable[]
   incomeDtls   IncomeDtl[]
   receivables  Receivable[]
-  ipDtl        IPDtl?
 
   @@index([incomeSourceId])
   @@index([patientId])
@@ -460,28 +461,17 @@ model RcvlPymt {
 }
 
 model IPAdm {
-  id        Int      @id @default(autoincrement())
-  patientId Int?
-  ipNumber  String   @unique @db.VarChar(50)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          Int      @id @default(autoincrement())
+  patientId   Int?
+  ipNo        String   @db.VarChar(50)
+  incomeTxnId Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  patient Patient? @relation(fields: [patientId], references: [id])
-  ipDtls  IPDtl[]
+  patient   Patient?   @relation(fields: [patientId], references: [id])
 
+  @@unique([ipNo, incomeTxnId])
   @@index([patientId])
   @@map("ip_adm")
 }
 
-model IPDtl {
-  id          Int      @id @default(autoincrement())
-  ipAdmId     Int
-  incomeTxnId Int      @unique
-  createdAt   DateTime @default(now())
-
-  ipAdm     IPAdm     @relation(fields: [ipAdmId], references: [id], onDelete: Cascade)
-  incomeTxn IncomeTxn @relation(fields: [incomeTxnId], references: [id], onDelete: Cascade)
-
-  @@index([ipAdmId])
-  @@map("ip_dtl")
-}

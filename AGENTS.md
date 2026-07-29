@@ -11,28 +11,30 @@ FinTrackr is a multi-organization financial tracking and approval management sys
 ## 2. Tech Stack
 
 ### Backend
-| Technology | Details |
-|---|---|
-| Runtime | Node.js (v22) |
-| Framework | Express 4.18 |
-| ORM | Prisma 5.22 (Prisma Client JS) |
-| Database | PostgreSQL |
-| Auth | JWT (jsonwebtoken 9.x) + bcryptjs |
-| Validation | express-validator 7.x |
+
+| Technology  | Details                                |
+| ----------- | -------------------------------------- |
+| Runtime     | Node.js (v22)                          |
+| Framework   | Express 4.18                           |
+| ORM         | Prisma 5.22 (Prisma Client JS)         |
+| Database    | PostgreSQL                             |
+| Auth        | JWT (jsonwebtoken 9.x) + bcryptjs      |
+| Validation  | express-validator 7.x                  |
 | File Upload | multer 2.x (memoryStorage, 10MB limit) |
-| Excel | read-excel-file 9.x |
-| Security | helmet 7.x, cors 2.x |
+| Excel       | read-excel-file 9.x                    |
+| Security    | helmet 7.x, cors 2.x                   |
 
 ### Frontend
-| Technology | Details |
-|---|---|
-| Framework | Next.js 15.5.22 (App Router) |
-| UI Library | React 18.2 + TypeScript 5.x |
-| Styling | Tailwind CSS 4.x |
-| State | Zustand 5.x |
-| HTTP | Axios 1.18 |
-| Icons | lucide-react 1.25 |
-| Toast | react-hot-toast 2.6 |
+
+| Technology | Details                      |
+| ---------- | ---------------------------- |
+| Framework  | Next.js 15.5.22 (App Router) |
+| UI Library | React 18.2 + TypeScript 5.x  |
+| Styling    | Tailwind CSS 4.x             |
+| State      | Zustand 5.x                  |
+| HTTP       | Axios 1.18                   |
+| Icons      | lucide-react 1.25            |
+| Toast      | react-hot-toast 2.6          |
 
 ---
 
@@ -111,11 +113,13 @@ FinTrackr/
 ## 4. Backend Conventions
 
 ### 4.1 Prisma Import
+
 ```js
-const { prisma } = require("../middleware/auth");   // shared PrismaClient instance
+const { prisma } = require("../middleware/auth"); // shared PrismaClient instance
 ```
 
 ### 4.2 Controller Pattern
+
 ```js
 const handlerName = async (req, res) => {
   try {
@@ -129,10 +133,12 @@ const handlerName = async (req, res) => {
 ```
 
 ### 4.3 Route Pattern
+
 - File creates `express.Router()`, imports controllers, applies `authenticate` middleware, exports router
 - Mounted in `app.js` as `app.use("/api/prefix", routes)`
 
 ### 4.4 Auth Middleware (`backend/src/middleware/auth.js`)
+
 - `authenticate` — verifies JWT from `Authorization: Bearer <token>`, populates `req.user`
 - `requireCompanyRole(...roles)` — company-level role guard
 - `requireOrg` — requires `x-org-id` header, verifies membership, sets `req.orgId`
@@ -140,26 +146,33 @@ const handlerName = async (req, res) => {
 - Exports `prisma` (shared instance used by all controllers)
 
 ### 4.5 Error Handling
+
 Per-handler:
+
 ```js
 try { ... } catch (error) {
   console.error("HandlerName error:", error);
   res.status(500).json({ message: "Internal server error" });
 }
 ```
+
 Global handler in `app.js`:
+
 ```js
 app.use((err, _req, res, _next) => {
   res.status(err.status || 500).json({ message: err.message || "Internal Server Error" });
 });
 ```
+
 Validation errors (express-validator):
+
 ```js
 const errors = validationResult(req);
 if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 ```
 
 ### 4.6 API Response Formats
+
 **Success**: `{ ...data, pagination?: { total, page, limit, pages } }`
 **Error**: `{ message: "..." }`
 **Validation**: `{ errors: [{ msg, param }] }`
@@ -170,6 +183,7 @@ if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 ## 5. Frontend Conventions
 
 ### 5.1 Page Pattern
+
 ```tsx
 "use client";
 import DashboardLayout from "@/components/layout/DashboardLayout";
@@ -180,32 +194,38 @@ import toast from "react-hot-toast";
 
 export default function Page() {
   const [loading, setLoading] = useState(false);
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    fetchData();
+  }, []);
   return <DashboardLayout>{/* content */}</DashboardLayout>;
 }
 ```
 
 ### 5.2 API Client (`src/lib/api.ts`)
+
 - Axios instance with `baseURL: process.env.NEXT_PUBLIC_API_URL`
 - Request interceptor: adds `Authorization` and `x-org-id` from localStorage
 - Response interceptor: on 401, clears token → redirects `/login`
 
 ### 5.3 Auth Store (`src/stores/authStore.ts`)
+
 - Zustand 5.x store: `user`, `token`, `userLevel`, `orgId`, `orgRole`, `orgMemberships`, `companyRoles`
 - `hydrateFromStorage()` — reads token/orgId from localStorage
 - `fetchMe()` — calls `/auth/me`, populates user + org memberships
 
 ### 5.4 UI Components
-| Component | Key Props |
-|---|---|
-| Button | variant (primary/secondary/danger/success), isLoading, size |
-| Modal | isOpen, onClose, title, maxWidth |
-| Input | label, error + HTMLInput props |
-| Select | label, error, options + HTMLSelect props |
-| Badge | variant (success/warning/danger/info/pending) |
-| Pagination | page, totalPages, total, limit, onPageChange |
+
+| Component  | Key Props                                                   |
+| ---------- | ----------------------------------------------------------- |
+| Button     | variant (primary/secondary/danger/success), isLoading, size |
+| Modal      | isOpen, onClose, title, maxWidth                            |
+| Input      | label, error + HTMLInput props                              |
+| Select     | label, error, options + HTMLSelect props                    |
+| Badge      | variant (success/warning/danger/info/pending)               |
+| Pagination | page, totalPages, total, limit, onPageChange                |
 
 ### 5.5 CSS Conventions
+
 - Tailwind CSS 4 via `@import "tailwindcss"`
 - Card: `bg-white rounded-2xl border border-slate-200/60 p-6`
 - Input: `w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500`
@@ -218,24 +238,26 @@ export default function Page() {
 
 `Payable` supports multiple party types via `partyType` + conditional FK:
 
-| `partyType` | FK field | References | Prisma Relation |
-|---|---|---|---|
-| `DOCTOR` | `drId` | `Doctor.id` | `doctor Doctor? @relation(fields: [drId], references: [id])` |
-| `VENDOR` | `bpId` | `BizPartner.id` | `bizPartner BizPartner? @relation(fields: [bpId], references: [id])` |
+| `partyType` | FK field | References      | Prisma Relation                                                      |
+| ----------- | -------- | --------------- | -------------------------------------------------------------------- |
+| `DOCTOR`    | `drId`   | `Doctor.id`     | `doctor Doctor? @relation(fields: [drId], references: [id])`         |
+| `VENDOR`    | `bpId`   | `BizPartner.id` | `bizPartner BizPartner? @relation(fields: [bpId], references: [id])` |
 
 Rules:
+
 - `partyType` is always set explicitly — never infer from which FK is non-null.
 - Only one FK is non-null per row; the other must be `null`.
 - The frontend `PayableItem` type has both `doctorId`/`doctorName` and `bizPartnerId`/`bizPartnerName`; read/write the correct pair based on `partyType`.
 
 ### Frontend PayableItem Interface
+
 ```ts
 interface PayableItem {
   payableId?: number;
   description: string;
   billedAmt: number;
   payableAmt: string;
-  partyType: string;         // "DOCTOR" | "VENDOR" | ""
+  partyType: string; // "DOCTOR" | "VENDOR" | ""
   doctorId: string;
   doctorName: string;
   bizPartnerId: string;
@@ -245,21 +267,25 @@ interface PayableItem {
 }
 ```
 
-### Submit Payload (POST /income/*/txns/:id/review)
+### Submit Payload (POST /income/\*/txns/:id/review)
+
 ```ts
-payables: [{
-  partyType: "DOCTOR" | "VENDOR",
-  doctorId: partyType === "DOCTOR" ? number : null,
-  bizPartnerId: partyType === "VENDOR" ? number : null,
-  description: string,
-  billedAmt: number,
-  payableAmt: number,
-  name: string | null,
-  isOptional: boolean,
-}]
+payables: [
+  {
+    partyType: "DOCTOR" | "VENDOR",
+    doctorId: partyType === "DOCTOR" ? number : null,
+    bizPartnerId: partyType === "VENDOR" ? number : null,
+    description: string,
+    billedAmt: number,
+    payableAmt: number,
+    name: string | null,
+    isOptional: boolean,
+  },
+];
 ```
 
 ### Controller Payable Creation Logic
+
 For DOCTOR: `partyType: "DOCTOR"`, `doctor: { connect: { id: doctorId } }` → Prisma auto-sets `drId`
 For VENDOR: `partyType: "VENDOR"`, `bizPartner: { connect: { id: bpId } }` → Prisma auto-sets `bpId`
 
@@ -268,11 +294,13 @@ For VENDOR: `partyType: "VENDOR"`, `bizPartner: { connect: { id: bpId } }` → P
 ## 7. ConfigMaster IP_FILTER
 
 `ConfigCategory.IP_FILTER` maps charge descriptions to allowed party types:
+
 - `value = "DOCTOR"` → DOCTOR only, autosuggest shows doctors
 - `value = "VENDOR"` → VENDOR only, autosuggest shows vendors
 - `value = "DOCTOR, VENDOR"` → both, optional item, combined suggestions
 
 ### Matching Logic
+
 ```ts
 const matchIpFilter = (description: string, configs) => {
   const upper = (description || "").toUpperCase().trim();
@@ -284,6 +312,7 @@ const matchIpFilter = (description: string, configs) => {
 ```
 
 ### Doctor Name Parsing from Description
+
 ```ts
 const getDoctorFromDescription = (description: string, sourceDoctors) => {
   const match = description.trim().match(/^dr[.\s:-]*(.+)$/i);
@@ -292,6 +321,7 @@ const getDoctorFromDescription = (description: string, sourceDoctors) => {
 ```
 
 ### Priority (Default Visible) Descriptions
+
 ```ts
 const isPriorityPayableDescription = (description: string) => {
   if (/^dr[.\s:-]/i.test(description)) return true;
@@ -304,6 +334,7 @@ const isPriorityPayableDescription = (description: string) => {
 ## 8. Key Business Rules
 
 ### Import Rules
+
 - **OP billing**: Bill No must start with `OPB`
 - **IP billing**: Bill No must start with `IPB`
 - **Header detection**: Auto-detects header row (looks for "Bill No" + "Patient Name")
@@ -312,6 +343,7 @@ const isPriorityPayableDescription = (description: string) => {
 - **Detail totals** must not exceed bill net amount (else marks ERROR)
 
 ### Transaction Review
+
 - Patient required before creating receivables
 - Non-credit/non-insurance → `RcvdPymt`
 - Insurance/Credit → `Receivable` record (arType INSURANCE or PATIENT)
@@ -321,17 +353,20 @@ const isPriorityPayableDescription = (description: string) => {
 - Sets `txn_status = "VERIFIED"`
 
 ### Payment Mode Codes
-| Code | Behavior |
-|---|---|
-| CASH, UPI, BANK, CARD, CHEQUE, COMPANY | Standard received payment |
-| CREDIT | Creates Receivable (arType=PATIENT) |
-| INSURANCE | Creates Receivable, requires insurance partner |
+
+| Code                                   | Behavior                                       |
+| -------------------------------------- | ---------------------------------------------- |
+| CASH, UPI, BANK, CARD, CHEQUE, COMPANY | Standard received payment                      |
+| CREDIT                                 | Creates Receivable (arType=PATIENT)            |
+| INSURANCE                              | Creates Receivable, requires insurance partner |
 
 ### Income Status Progression
+
 Import → UNVERIFIED → Review → VERIFIED
 Error detection → ERROR → Correction → VERIFIED
 
 ### Org-Level Features
+
 - Org-scoped operations require `x-org-id` header
 - COMPANY-level users bypass org role checks
 - Approval page restricted to `LEADER` org role
@@ -341,25 +376,28 @@ Error detection → ERROR → Correction → VERIFIED
 ## 9. Database Conventions
 
 ### Table Naming (via `@@map`)
-| Model | DB Table |
-|---|---|
-| ImportLog | import_log |
-| IncomeTxn | income_txn |
-| RcvdPymt | rcvd_pymts |
-| Payable | payable |
-| PayablePymt | payable_pymts |
-| BizPartner | biz_partner |
-| Receivable | receivables |
+
+| Model        | DB Table      |
+| ------------ | ------------- |
+| ImportLog    | import_log    |
+| IncomeTxn    | income_txn    |
+| RcvdPymt     | rcvd_pymts    |
+| Payable      | payable       |
+| PayablePymt  | payable_pymts |
+| BizPartner   | biz_partner   |
+| Receivable   | receivables   |
 | ConfigMaster | config_master |
-| IncomeSource | income_src |
-| PaymentMode | payment_mode |
+| IncomeSource | income_src    |
+| PaymentMode  | payment_mode  |
 
 ### Column Naming
+
 - camelCase in Prisma → snake_case in DB via `@map`
 - Monetary amounts: `@db.Decimal(12, 2)`
 - Timestamps: `createdAt`, `updatedAt` with `@default(now())` / `@updatedAt`
 
 ### Enum Tables (mapped)
+
 ```
 PartyType     → party_type_enum
 ConfigCategory→ config_category_enum
@@ -370,12 +408,14 @@ ConfigCategory→ config_category_enum
 ## 10. Naming Conventions
 
 ### Backend (JS)
+
 - Files: `camelCase.js` (incomeController.js, incomeIp.js)
 - Functions: `camelCase` (getIncomeTxns, importOPBilling)
 - Constants: `UPPER_SNAKE` (EXPECTED_HEADERS, DUMMY_VALUES)
 - Exports: `module.exports = { ... }`
 
 ### Frontend (TS/TSX)
+
 - Files: `camelCase.ts`, `PascalCase.tsx` (api.ts, Button.tsx)
 - Components: `PascalCase`
 - Functions: `camelCase`
@@ -383,6 +423,7 @@ ConfigCategory→ config_category_enum
 - Props interfaces: `PascalCase + Props` suffix
 
 ### API Routes
+
 - Prefix: `/api/`
 - Resources: single word or kebab-case (`/biz-partners`)
 - Nested: `/income/ip/txns/:id/review`
@@ -392,6 +433,7 @@ ConfigCategory→ config_category_enum
 
 ## 11. Schema Change Convention
 
-**No fallback/legacy compatibility code** — the DB is always recreated from scratch on schema changes (`npx prisma db push --accept-data-loss`). Do not write runtime guards that check which fields exist. Use the Prisma field names directly (e.g., always `pymt_status`, never check if `status` exists).
-
+**No fallback/legacy compatibility code**
+Do not write runtime guards that check which fields exist.
 When proposing a schema change, the agent **must** advise whether the user needs to recreate the database.
+The agent must not run `npx prisma db push --accept-data-loss`.

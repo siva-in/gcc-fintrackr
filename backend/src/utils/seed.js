@@ -12,6 +12,7 @@ const INCOME_SOURCES = [
   { code: "LAB", name: "Laboratory" },
   { code: "PHARMACY", name: "Pharmacy" },
   { code: "MISC", name: "Miscellaneous" },
+  { code: "ADV", name: "Advance" },
 ];
 
 const PAYMENT_MODES = [
