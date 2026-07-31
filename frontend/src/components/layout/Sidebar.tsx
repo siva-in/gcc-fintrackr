@@ -7,11 +7,9 @@ import { useState } from "react";
 import {
   LayoutDashboard,
   Users,
-  Building2,
   FileText,
   CheckCircle,
   Shield,
-  Settings,
   Stethoscope,
   UserRound,
   X,

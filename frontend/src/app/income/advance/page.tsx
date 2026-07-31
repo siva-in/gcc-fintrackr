@@ -6,7 +6,8 @@ import api from "@/lib/api";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import toast from "react-hot-toast";
-import { Upload, Search, X, Banknote, CreditCard, Wallet, TrendingUp, List, LayoutDashboard, FileText, AlertTriangle, Eye, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, CheckCircle, CircleDollarSign } from "lucide-react";
+import { Upload, Search, X, Banknote, CreditCard, Wallet, TrendingUp, List, LayoutDashboard, FileText, AlertTriangle, CheckCircle, CircleDollarSign } from "lucide-react";
+import Pagination from "@/components/ui/Pagination";
 
 interface Dashboard {
   unrealised: number;
@@ -191,6 +192,13 @@ export default function IncomeAdvancePage() {
     setPage(1);
     fetchTxns(1, search, fromDate, toDate, txnPaymentFilter, txnPymtStatusFilter);
   };
+
+  const handlePageChange = (p: number) => {
+    setPage(p);
+    fetchTxns(p);
+  };
+
+  const handleLogPageChange = (p: number) => { setLogPage(p); };
 
   const handleCardClick = (pymtStatus?: string, paymentMode?: string) => {
     setTxnPymtStatusFilter(pymtStatus || "");
@@ -472,20 +480,8 @@ export default function IncomeAdvancePage() {
                   </tbody>
                 </table>
               </div>
-              {hasSearched && pagination.pages > 1 && (
-                <div className="flex items-center justify-between px-5 py-3.5 border-t border-slate-200/60 bg-slate-50/50">
-                  <p className="text-xs text-slate-400">
-                    Showing {((pagination.page - 1) * 10) + 1} to {Math.min(pagination.page * 10, pagination.total)} of {pagination.total}
-                  </p>
-                  <div className="flex items-center gap-1">
-                    <button disabled={pagination.page <= 1} onClick={() => { setPage(1); fetchTxns(1); }} className="px-2.5 py-1.5 text-sm rounded-lg font-medium transition-all bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"><ChevronsLeft size={16} /></button>
-                    <button disabled={pagination.page <= 1} onClick={() => { const p = pagination.page - 1; setPage(p); fetchTxns(p); }} className="px-2.5 py-1.5 text-sm rounded-lg font-medium transition-all bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"><ChevronLeft size={16} /></button>
-                    <input type="number" value={pagination.page} onChange={(e) => { const p = Math.min(Math.max(1, parseInt(e.target.value) || 1), pagination.pages); setPage(p); fetchTxns(p); }} className="w-14 text-center px-2 py-1.5 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 [appearance:textfield]" min={1} max={pagination.pages} />
-                    <span className="text-xs text-slate-400">of {pagination.pages}</span>
-                    <button disabled={pagination.page >= pagination.pages} onClick={() => { const p = pagination.page + 1; setPage(p); fetchTxns(p); }} className="px-2.5 py-1.5 text-sm rounded-lg font-medium transition-all bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"><ChevronRight size={16} /></button>
-                    <button disabled={pagination.page >= pagination.pages} onClick={() => { setPage(pagination.pages); fetchTxns(pagination.pages); }} className="px-2.5 py-1.5 text-sm rounded-lg font-medium transition-all bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"><ChevronsRight size={16} /></button>
-                  </div>
-                </div>
+              {hasSearched && (
+                <Pagination page={page} totalPages={pagination.pages} total={pagination.total} limit={10} onPageChange={handlePageChange} />
               )}
             </div>
           </>
@@ -548,15 +544,7 @@ export default function IncomeAdvancePage() {
                 </table>
               </div>
               {logPagination.pages > 1 && (
-                <div className="flex items-center justify-between px-5 py-3.5 border-t border-slate-200/60 bg-slate-50/50">
-                  <p className="text-xs text-slate-400">Page {logPagination.page} of {logPagination.pages}</p>
-                  <div className="flex items-center gap-1">
-                    <button disabled={logPagination.page <= 1} onClick={() => { setLogPage(1); fetchImportLogs(1); }} className="px-2.5 py-1.5 text-sm rounded-lg font-medium transition-all bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"><ChevronsLeft size={16} /></button>
-                    <button disabled={logPagination.page <= 1} onClick={() => { const p = logPagination.page - 1; setLogPage(p); fetchImportLogs(p); }} className="px-2.5 py-1.5 text-sm rounded-lg font-medium transition-all bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"><ChevronLeft size={16} /></button>
-                    <button disabled={logPagination.page >= logPagination.pages} onClick={() => { const p = logPagination.page + 1; setLogPage(p); fetchImportLogs(p); }} className="px-2.5 py-1.5 text-sm rounded-lg font-medium transition-all bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"><ChevronRight size={16} /></button>
-                    <button disabled={logPagination.page >= logPagination.pages} onClick={() => { setLogPage(logPagination.pages); fetchImportLogs(logPagination.pages); }} className="px-2.5 py-1.5 text-sm rounded-lg font-medium transition-all bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"><ChevronsRight size={16} /></button>
-                  </div>
-                </div>
+                <Pagination page={logPage} totalPages={logPagination.pages} total={logPagination.total} limit={10} onPageChange={handleLogPageChange} />
               )}
             </div>
           </>

@@ -21,9 +21,29 @@ interface IncomeTxn {
   txn_status: string;
   patient: { id: number; name: string; uhid: string | null; mobileNo: string | null } | null;
   incomeSource: { code: string; name: string } | null;
-  rcvdPymts: { id: number; amount: number | null; paymentMode: { code: string; name: string } | null; paymentDate: string | null; paidBy: string | null }[];
-  payables: { id: number; billedAmt: number; payableAmt: number | null; balanceAmt: number; status: string; remarks: string | null; doctor: { id: number; name: string } | null }[];
-  receivables?: { id: number; arType: string; dueAmt: number; dueDate: string | null; bizPartner: { id: number; bpName: string } | null }[];
+  rcvdPymts: {
+    id: number;
+    amount: number | null;
+    paymentMode: { code: string; name: string } | null;
+    paymentDate: string | null;
+    paidBy: string | null;
+  }[];
+  payables: {
+    id: number;
+    billedAmt: number;
+    payableAmt: number | null;
+    balanceAmt: number;
+    status: string;
+    remarks: string | null;
+    doctor: { id: number; name: string } | null;
+  }[];
+  receivables?: {
+    id: number;
+    arType: string;
+    dueAmt: number;
+    dueDate: string | null;
+    bizPartner: { id: number; bpName: string } | null;
+  }[];
   incomeDtls?: IncomeDtl[];
 }
 
@@ -60,7 +80,15 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
   const [txn, setTxn] = useState<IncomeTxn | null>(null);
   const [showAllPayableItems, setShowAllPayableItems] = useState(false);
 
-  const [pymts, setPymts] = useState<{ paymentModeId: string; amount: string; paymentDate: string; insurancePartnerId: string; insurancePartnerName: string }[]>([]);
+  const [pymts, setPymts] = useState<
+    {
+      paymentModeId: string;
+      amount: string;
+      paymentDate: string;
+      insurancePartnerId: string;
+      insurancePartnerName: string;
+    }[]
+  >([]);
   const [payableItems, setPayableItems] = useState<PayableItem[]>([]);
   const [doctorsList, setDoctorsList] = useState<{ id: number; name: string }[]>([]);
   const [vendorsList, setVendorsList] = useState<{ id: number; bpName: string }[]>([]);
@@ -83,7 +111,10 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
 
   const getPartyTypesFromConfig = (matched: { code: string; value: string } | null): string[] => {
     if (!matched) return [];
-    return matched.value.split(",").map((s) => s.trim()).filter(Boolean);
+    return matched.value
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
   };
 
   const isPriorityPayableDescription = (description: string) => {
@@ -97,8 +128,24 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
     const match = description.trim().match(/^dr[.\s:-]*(.+)$/i);
     if (!match) return null;
     const stopWords = new Set([
-      "doctor", "consultation", "speciality", "specialty", "charges", "charge", "fee", "fees", "team",
-      "surgeon", "assistant", "anesthesiology", "anaesthesia", "nursing", "room", "floor", "bed", "icu",
+      "doctor",
+      "consultation",
+      "speciality",
+      "specialty",
+      "charges",
+      "charge",
+      "fee",
+      "fees",
+      "team",
+      "surgeon",
+      "assistant",
+      "anesthesiology",
+      "anaesthesia",
+      "nursing",
+      "room",
+      "floor",
+      "bed",
+      "icu",
     ]);
     const tail = match[1].split(/[(),/-]/)[0] || "";
     const tokens = tail.trim().split(/\s+/).filter(Boolean);
@@ -144,37 +191,57 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
       setTxn(data);
 
       if (data.rcvdPymts && data.rcvdPymts.length > 0) {
-        const insuranceReceivables = (data.receivables || []).filter((r: { arType: string }) => r.arType === "INSURANCE");
+        const insuranceReceivables = (data.receivables || []).filter(
+          (r: { arType: string }) => r.arType === "INSURANCE",
+        );
         const usedInsuranceIds = new Set<number>();
         const normalizeDate = (d: string | null) => (d ? new Date(d).toISOString().split("T")[0] : "");
 
-        setPymts(data.rcvdPymts.map((p: { paymentModeId: number | null; amount: number | null; paymentDate: string | null; paymentMode?: { code?: string } | null }) => {
-          let insurancePartnerId = "";
-          let insurancePartnerName = "";
-          if (p.paymentMode?.code === "INSURANCE") {
-            const paymentDate = normalizeDate(p.paymentDate);
-            const amount = Number(p.amount || 0);
-            const matched = insuranceReceivables.find((r: { id: number; dueAmt: number; dueDate: string | null; bizPartner: { id: number; bpName: string } | null }) => (
-              !usedInsuranceIds.has(r.id)
-              && Math.abs(Number(r.dueAmt || 0) - amount) <= 0.01
-              && normalizeDate(r.dueDate) === paymentDate
-            )) || insuranceReceivables.find((r: { id: number }) => !usedInsuranceIds.has(r.id));
-            if (matched) {
-              usedInsuranceIds.add(matched.id);
-              insurancePartnerId = matched.bizPartner?.id ? String(matched.bizPartner.id) : "";
-              insurancePartnerName = matched.bizPartner?.bpName || "";
-            }
-          }
-          return {
-            paymentModeId: p.paymentModeId ? String(p.paymentModeId) : "",
-            amount: p.amount != null ? String(p.amount) : "",
-            paymentDate: p.paymentDate ? new Date(p.paymentDate).toISOString().split("T")[0] : "",
-            insurancePartnerId,
-            insurancePartnerName,
-          };
-        }));
+        setPymts(
+          data.rcvdPymts.map(
+            (p: {
+              paymentModeId: number | null;
+              amount: number | null;
+              paymentDate: string | null;
+              paymentMode?: { code?: string } | null;
+            }) => {
+              let insurancePartnerId = "";
+              let insurancePartnerName = "";
+              if (p.paymentMode?.code === "INSURANCE") {
+                const paymentDate = normalizeDate(p.paymentDate);
+                const amount = Number(p.amount || 0);
+                const matched =
+                  insuranceReceivables.find(
+                    (r: {
+                      id: number;
+                      dueAmt: number;
+                      dueDate: string | null;
+                      bizPartner: { id: number; bpName: string } | null;
+                    }) =>
+                      !usedInsuranceIds.has(r.id) &&
+                      Math.abs(Number(r.dueAmt || 0) - amount) <= 0.01 &&
+                      normalizeDate(r.dueDate) === paymentDate,
+                  ) || insuranceReceivables.find((r: { id: number }) => !usedInsuranceIds.has(r.id));
+                if (matched) {
+                  usedInsuranceIds.add(matched.id);
+                  insurancePartnerId = matched.bizPartner?.id ? String(matched.bizPartner.id) : "";
+                  insurancePartnerName = matched.bizPartner?.bpName || "";
+                }
+              }
+              return {
+                paymentModeId: p.paymentModeId ? String(p.paymentModeId) : "",
+                amount: p.amount != null ? String(p.amount) : "",
+                paymentDate: p.paymentDate ? new Date(p.paymentDate).toISOString().split("T")[0] : "",
+                insurancePartnerId,
+                insurancePartnerName,
+              };
+            },
+          ),
+        );
       } else {
-        setPymts([{ paymentModeId: "", amount: "", paymentDate: "", insurancePartnerId: "", insurancePartnerName: "" }]);
+        setPymts([
+          { paymentModeId: "", amount: "", paymentDate: "", insurancePartnerId: "", insurancePartnerName: "" },
+        ]);
       }
 
       if (data.incomeDtls && data.incomeDtls.length > 0) {
@@ -183,7 +250,11 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
           const partyTypes = getPartyTypesFromConfig(matched);
           const isPayableType = partyTypes.includes("DOCTOR");
           const isOptional = !!(matched && matched.value === "DOCTOR, VENDOR");
-          const defaultPartyType = partyTypes.includes("DOCTOR") ? "DOCTOR" : partyTypes.includes("VENDOR") ? "VENDOR" : "";
+          const defaultPartyType = partyTypes.includes("DOCTOR")
+            ? "DOCTOR"
+            : partyTypes.includes("VENDOR")
+              ? "VENDOR"
+              : "";
           const parsedDoctor = getDoctorFromDescription(dtl.description || "", sourceDoctors);
           return {
             payableId: undefined,
@@ -200,7 +271,13 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
           };
         });
 
-        const savedPayables = (data.payables || []) as { id: number; billedAmt: number; payableAmt: number | null; doctor: { id: number; name: string } | null; bizPartner: { id: number; bpName: string } | null }[];
+        const savedPayables = (data.payables || []) as {
+          id: number;
+          billedAmt: number;
+          payableAmt: number | null;
+          doctor: { id: number; name: string } | null;
+          bizPartner: { id: number; bpName: string } | null;
+        }[];
         const usedIndexes = new Set<number>();
         const isPreferredRow = (item: PayableItem) => {
           return !!matchIpFilter(item.description, filterConfigs) || /^DR[.\s:-]/i.test(item.description);
@@ -208,7 +285,9 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
 
         const findRowIndexForPayable = (payable: { billedAmt: number }) => {
           const billed = Number(payable.billedAmt || 0);
-          let idx = items.findIndex((item, i) => !usedIndexes.has(i) && isPreferredRow(item) && Math.abs(item.billedAmt - billed) <= 0.01);
+          let idx = items.findIndex(
+            (item, i) => !usedIndexes.has(i) && isPreferredRow(item) && Math.abs(item.billedAmt - billed) <= 0.01,
+          );
           if (idx >= 0) return idx;
           idx = items.findIndex((item, i) => !usedIndexes.has(i) && Math.abs(item.billedAmt - billed) <= 0.01);
           return idx;
@@ -254,7 +333,9 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
       const doctors = data.doctors || [];
       setDoctorsList(doctors);
       return doctors;
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     return [];
   }
 
@@ -263,7 +344,9 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
       const { data } = await api.get("/biz-partners?bpType=VENDOR&limit=9999");
       setVendorsList(data.bizPartners || []);
       return data.bizPartners || [];
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     return [];
   }
 
@@ -271,14 +354,18 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
     try {
       const { data } = await api.get("/income/ip/payment-modes");
       setPaymentModes(data);
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
   async function fetchInsurancePartners() {
     try {
       const { data } = await api.get("/income/ip/insurance-partners");
       setInsurancePartners(data || []);
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
   async function fetchIpFilterConfigs() {
@@ -286,7 +373,9 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
       const { data } = await api.get("/config/category/IP_FILTER");
       setIpFilterConfigs(data || []);
       return data || [];
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     return [];
   }
 
@@ -317,7 +406,10 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
   }, [doctorsList, payableItems]);
 
   const addPaymentRow = () => {
-    setPymts([...pymts, { paymentModeId: "", amount: "", paymentDate: "", insurancePartnerId: "", insurancePartnerName: "" }]);
+    setPymts([
+      ...pymts,
+      { paymentModeId: "", amount: "", paymentDate: "", insurancePartnerId: "", insurancePartnerName: "" },
+    ]);
   };
 
   const removePaymentRow = (index: number) => {
@@ -392,11 +484,22 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
 
   const handleSubmit = async () => {
     if (!txn) return;
+
+    const netAmt = Number(txn.netAmount);
+
+    const totalPaymentAmt = pymts
+      .filter((p) => p.amount && parseFloat(p.amount) > 0)
+      .reduce((sum, p) => sum + parseFloat(p.amount), 0);
+
+    if (Math.abs(totalPaymentAmt - netAmt) > 0.01) {
+      return toast.error("Total payments must equal Net Amount");
+    }
+
     setSaving(true);
     try {
       const rcvdPymts = pymts
-        .filter(p => p.amount && parseFloat(p.amount) > 0)
-        .map(p => ({
+        .filter((p) => p.amount && parseFloat(p.amount) > 0)
+        .map((p) => ({
           paymentModeId: p.paymentModeId || null,
           amount: p.amount,
           paymentDate: p.paymentDate || null,
@@ -404,8 +507,8 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
         }));
 
       const payables = payableItems
-        .filter(item => item.isSelected && item.payableAmt && parseFloat(item.payableAmt) > 0)
-        .map(item => ({
+        .filter((item) => item.isSelected && item.payableAmt && parseFloat(item.payableAmt) > 0)
+        .map((item) => ({
           payableId: item.payableId || null,
           description: item.description,
           billedAmt: item.billedAmt,
@@ -421,7 +524,8 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
       toast.success("Review saved successfully");
       router.push(buildBackUrl());
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || "Failed to save review";
+      const msg =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message || "Failed to save review";
       toast.error(msg);
     } finally {
       setSaving(false);
@@ -429,7 +533,31 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
   };
 
   const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(val);
+    return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(val);
+  };
+
+  const getPymtBg = () => {
+    if (!txn) return "bg-slate-50";
+    switch (txn.pymt_status) {
+      case "FULLYPAID":
+        return "bg-emerald-50 border border-emerald-200";
+      case "PARTIALPAID":
+        return "bg-amber-50 border border-amber-200";
+      default:
+        return "bg-red-50 border border-red-200";
+    }
+  };
+
+  const getPymtLabelColor = () => {
+    if (!txn) return "text-slate-500";
+    switch (txn.pymt_status) {
+      case "FULLYPAID":
+        return "text-emerald-600";
+      case "PARTIALPAID":
+        return "text-amber-600";
+      default:
+        return "text-red-600";
+    }
   };
 
   const formatDate = (d: string | null) => {
@@ -439,10 +567,25 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "VERIFIED": return "bg-emerald-50 text-emerald-600";
-      case "UNVERIFIED": return "bg-orange-50 text-orange-600";
-      case "ERROR": return "bg-red-50 text-red-600";
-      default: return "bg-slate-50 text-slate-500";
+      case "VERIFIED":
+        return "bg-emerald-50 text-emerald-600";
+      case "UNVERIFIED":
+        return "bg-orange-50 text-orange-600";
+      case "ERROR":
+        return "bg-red-50 text-red-600";
+      default:
+        return "bg-slate-50 text-slate-500";
+    }
+  };
+
+  const getPymtStatusColor = (status: string) => {
+    switch (status) {
+      case "FULLYPAID":
+        return "bg-emerald-50 text-emerald-600";
+      case "PARTIALPAID":
+        return "bg-amber-50 text-amber-600";
+      default:
+        return "bg-red-50 text-red-600";
     }
   };
 
@@ -464,23 +607,37 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
           <p className="text-slate-400 text-sm mt-1 xl:hidden">Review and update payment details, create payables</p>
         </div>
         {txn && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 xl:ml-4">
-              <div className="p-2 bg-slate-50 rounded-lg min-w-[130px]">
-                <label className="block text-[11px] font-medium text-slate-500 mb-1">Gross Amount</label>
-                <p className="text-sm font-semibold text-slate-800">{txn.grossAmount ? formatCurrency(Number(txn.grossAmount)) : "-"}</p>
-              </div>
-              <div className="p-2 bg-slate-50 rounded-lg min-w-[130px]">
-                <label className="block text-[11px] font-medium text-slate-500 mb-1">Discount</label>
-                <p className="text-sm font-semibold text-slate-800">{txn.discountAmount ? formatCurrency(Number(txn.discountAmount)) : "-"}</p>
-              </div>
-              <div className="p-2 bg-slate-50 rounded-lg min-w-[130px]">
-                <label className="block text-[11px] font-medium text-slate-500 mb-1">Advance Adjustment</label>
-                <p className="text-sm font-semibold text-slate-800">{txn.advAdjt ? formatCurrency(Number(txn.advAdjt)) : "-"}</p>
-              </div>
-              <div className="p-2 bg-indigo-50 rounded-lg border border-indigo-100 min-w-[130px]">
-                <label className="block text-[11px] font-medium text-indigo-600 mb-1">Net Amount</label>
-                <p className="text-sm font-bold text-indigo-700">{txn.netAmount ? formatCurrency(Number(txn.netAmount)) : "-"}</p>
-              </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2 xl:ml-4">
+            <div className="p-2 bg-slate-50 rounded-lg min-w-[130px]">
+              <label className="block text-[11px] font-medium text-slate-500 mb-1">Total Amount</label>
+              <p className="text-sm font-semibold text-slate-800">
+                {txn.grossAmount ? formatCurrency(Number(txn.grossAmount)) : "-"}
+              </p>
+            </div>
+            <div className="p-2 bg-slate-50 rounded-lg min-w-[130px]">
+              <label className="block text-[11px] font-medium text-slate-500 mb-1">Discount</label>
+              <p className="text-sm font-semibold text-slate-800">
+                {txn.discountAmount ? formatCurrency(Number(txn.discountAmount)) : "-"}
+              </p>
+            </div>
+            <div className="p-2 bg-purple-50 rounded-lg border border-purple-200 min-w-[130px]">
+              <label className="block text-[11px] font-medium text-purple-600 mb-1">Net Amount</label>
+              <p className="text-sm font-semibold text-purple-700">
+                {formatCurrency((Number(txn.grossAmount) || 0) - (Number(txn.discountAmount) || 0))}
+              </p>
+            </div>
+            <div className="p-2 bg-slate-50 rounded-lg min-w-[130px]">
+              <label className="block text-[11px] font-medium text-slate-500 mb-1">Adv Adj</label>
+              <p className="text-sm font-semibold text-slate-800">
+                {txn.advAdjt ? formatCurrency(Number(txn.advAdjt)) : "-"}
+              </p>
+            </div>
+            <div className={`p-2 rounded-lg min-w-[130px] ${getPymtBg()}`}>
+              <label className={`block text-[11px] font-medium mb-1 ${getPymtLabelColor()}`}>Final Amt</label>
+              <p className="text-sm font-bold text-indigo-700">
+                {txn.netAmount ? formatCurrency(Number(txn.netAmount)) : "-"}
+              </p>
+            </div>
           </div>
         )}
       </div>
@@ -517,8 +674,18 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
                 <p className="text-sm font-medium text-slate-700">{txn.ipNo || "-"}</p>
               </div>
               <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Pymt Status</label>
+                <span
+                  className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium ${getPymtStatusColor(txn.pymt_status)}`}
+                >
+                  {txn.pymt_status}
+                </span>
+              </div>
+              <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">Txn Status</label>
-                <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(txn.txn_status)}`}>
+                <span
+                  className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(txn.txn_status)}`}
+                >
                   {txn.txn_status}
                 </span>
               </div>
@@ -532,14 +699,17 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
           <div className="bg-white rounded-2xl border border-slate-200/60 p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-slate-700">Payments (Received)</h2>
-              <button onClick={addPaymentRow} className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors">
+              <button
+                onClick={addPaymentRow}
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+              >
                 <Plus size={16} /> Add Payment
               </button>
             </div>
             <div className="space-y-3">
               {pymts.map((pmt, idx) => (
-                <div key={idx} className="grid grid-cols-12 gap-3 items-end p-3 bg-slate-50 rounded-xl">
-                  <div className="col-span-3">
+                <div key={idx} className="flex gap-3 items-end p-3 bg-slate-50 rounded-xl">
+                  <div className="flex-1">
                     <label className="block text-xs font-medium text-slate-500 mb-1">Payment Mode</label>
                     <select
                       value={pmt.paymentModeId}
@@ -555,11 +725,13 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
                     >
                       <option value="">Select mode</option>
                       {paymentModes.map((m) => (
-                        <option key={m.id} value={m.id}>{m.name}</option>
+                        <option key={m.id} value={m.id}>
+                          {m.name}
+                        </option>
                       ))}
                     </select>
                   </div>
-                  <div className="col-span-2">
+                  <div className="flex-1">
                     <label className="block text-xs font-medium text-slate-500 mb-1">Amount</label>
                     <input
                       type="number"
@@ -568,9 +740,11 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
                       className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                     />
                   </div>
-                  <div className={`${getModeCodeById(pmt.paymentModeId) === "INSURANCE" ? "col-span-3" : "col-span-6"}`}>
+                  <div className="flex-1">
                     <label className="block text-xs font-medium text-slate-500 mb-1">
-                      {["INSURANCE", "CREDIT"].includes(getModeCodeById(pmt.paymentModeId)) ? "Payment Due Date" : "Payment Date"}
+                      {["INSURANCE", "CREDIT"].includes(getModeCodeById(pmt.paymentModeId))
+                        ? "Payment Due Date"
+                        : "Payment Date"}
                     </label>
                     <input
                       type="date"
@@ -580,7 +754,7 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
                     />
                   </div>
                   {getModeCodeById(pmt.paymentModeId) === "INSURANCE" && (
-                    <div className="col-span-3">
+                    <div className="flex-1">
                       <label className="block text-xs font-medium text-slate-500 mb-1">Insurance Company</label>
                       <input
                         type="text"
@@ -595,9 +769,12 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
                       )}
                     </div>
                   )}
-                  <div className="col-span-1">
+                  <div className="flex-none">
                     {pymts.length > 1 && (
-                      <button onClick={() => removePaymentRow(idx)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                      <button
+                        onClick={() => removePaymentRow(idx)}
+                        className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      >
                         <Trash2 size={16} />
                       </button>
                     )}
@@ -621,110 +798,144 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
                   </button>
                 )}
               </div>
-              <p className="text-xs text-slate-400 mb-4">Select items to create payables. Amount must be less than or equal to billed amount.</p>
+              <p className="text-xs text-slate-400 mb-4">
+                Select items to create payables. Amount must be less than or equal to billed amount.
+              </p>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-200">
                       <th className="px-4 py-3 w-10"></th>
-                      <th className="text-left px-4 py-3 font-semibold text-slate-500 text-xs uppercase tracking-wider">Description</th>
-                      <th className="text-right px-4 py-3 font-semibold text-slate-500 text-xs uppercase tracking-wider">Billed Amount</th>
-                      <th className="text-left px-4 py-3 font-semibold text-slate-500 text-xs uppercase tracking-wider">Doctor / Vendor</th>
-                      <th className="text-right px-4 py-3 font-semibold text-slate-500 text-xs uppercase tracking-wider">Payable Amount</th>
+                      <th className="text-left px-4 py-3 font-semibold text-slate-500 text-xs uppercase tracking-wider">
+                        Description
+                      </th>
+                      <th className="text-right px-4 py-3 font-semibold text-slate-500 text-xs uppercase tracking-wider">
+                        Billed Amount
+                      </th>
+                      <th className="text-left px-4 py-3 font-semibold text-slate-500 text-xs uppercase tracking-wider">
+                        Doctor / Vendor
+                      </th>
+                      <th className="text-right px-4 py-3 font-semibold text-slate-500 text-xs uppercase tracking-wider">
+                        Payable Amount
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {payableItems.map((item, idx) => {
                       if (!showAllPayableItems && !isDefaultVisiblePayableDescription(item.description)) return null;
                       return (
-                      <tr key={idx} className={`${item.isSelected ? "bg-indigo-50/30" : ""} ${item.isOptional ? "bg-amber-50/20" : ""}`}>
-                        <td className="px-4 py-3">
-                          {isFilterMatch(item.description) ? (
-                          <input
-                            type="checkbox"
-                            checked={item.isSelected}
-                            onChange={(e) => {
-                              const updated = [...payableItems];
-                              updated[idx].isSelected = e.target.checked;
-                              if (e.target.checked) {
-                                const partyTypes = getPartyTypesFromConfig(matchIpFilter(updated[idx].description));
-                                if (partyTypes.includes("DOCTOR") && /^dr[.\s:-]/i.test(updated[idx].description || "")) {
-                                  const parsedDoctor = getDoctorFromDescription(updated[idx].description || "", doctorsList);
-                                  if (parsedDoctor) {
-                                    updated[idx].partyType = "DOCTOR";
-                                    updated[idx].doctorId = parsedDoctor.doctorId;
-                                    updated[idx].doctorName = parsedDoctor.doctorName;
-                                  }
-                                }
-                              }
-                              setPayableItems(updated);
-                            }}
-                            className="accent-indigo-500"
-                          />
-                          ) : null}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="font-medium text-slate-700">{item.description}</span>
-                          {item.isOptional && (
-                            <span className="ml-2 text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Optional</span>
-                          )}
-                          {!isFilterMatch(item.description) && (
-                            <span className="ml-2 text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">Not editable</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-right font-medium text-slate-700">{formatCurrency(item.billedAmt)}</td>
-                        <td className="px-4 py-3">
-                          {item.isSelected ? (
-                            <div>
+                        <tr
+                          key={idx}
+                          className={`${item.isSelected ? "bg-indigo-50/30" : ""} ${item.isOptional ? "bg-amber-50/20" : ""}`}
+                        >
+                          <td className="px-4 py-3">
+                            {isFilterMatch(item.description) ? (
                               <input
-                                type="text"
-                                list={getSuggestionListId(idx)}
-                                value={item.partyType === "VENDOR" ? item.bizPartnerName : item.doctorName}
-                                onChange={(e) => updatePayableDoctorByName(idx, e.target.value)}
-                                placeholder={item.partyType === "VENDOR" ? "Type vendor name..." : "Type doctor name..."}
-                                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                              />
-                              {item.partyType === "VENDOR" ? (
-                                !item.bizPartnerId && item.bizPartnerName.trim() && (
-                                  <p className="text-[10px] text-amber-600 mt-1">Select a vendor from suggestions</p>
-                                )
-                              ) : (
-                                !item.doctorId && item.doctorName.trim() && (
-                                  <p className="text-[10px] text-amber-600 mt-1">Select a doctor from suggestions</p>
-                                )
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-xs text-slate-400">-</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          {item.isSelected ? (
-                            <div>
-                              <input
-                                type="number"
-                                min={0}
-                                max={item.billedAmt}
-                                step="0.01"
-                                value={item.payableAmt}
+                                type="checkbox"
+                                checked={item.isSelected}
                                 onChange={(e) => {
                                   const updated = [...payableItems];
-                                  updated[idx].payableAmt = e.target.value;
+                                  updated[idx].isSelected = e.target.checked;
+                                  if (e.target.checked) {
+                                    const partyTypes = getPartyTypesFromConfig(matchIpFilter(updated[idx].description));
+                                    if (
+                                      partyTypes.includes("DOCTOR") &&
+                                      /^dr[.\s:-]/i.test(updated[idx].description || "")
+                                    ) {
+                                      const parsedDoctor = getDoctorFromDescription(
+                                        updated[idx].description || "",
+                                        doctorsList,
+                                      );
+                                      if (parsedDoctor) {
+                                        updated[idx].partyType = "DOCTOR";
+                                        updated[idx].doctorId = parsedDoctor.doctorId;
+                                        updated[idx].doctorName = parsedDoctor.doctorName;
+                                      }
+                                    }
+                                  }
                                   setPayableItems(updated);
                                 }}
-                                placeholder={`Max: ${item.billedAmt}`}
-                                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm text-right focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                                className="accent-indigo-500"
                               />
-                              {item.payableAmt && parseFloat(item.payableAmt) > item.billedAmt && (
-                                <p className="text-[10px] text-red-500 mt-1">Must be less than or equal to billed amount</p>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-xs text-slate-400">-</span>
-                          )}
-                        </td>
-                      </tr>
-                    );})}
+                            ) : null}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="font-medium text-slate-700">{item.description}</span>
+                            {item.isOptional && (
+                              <span className="ml-2 text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">
+                                Optional
+                              </span>
+                            )}
+                            {!isFilterMatch(item.description) && (
+                              <span className="ml-2 text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                                Not editable
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right font-medium text-slate-700">
+                            {formatCurrency(item.billedAmt)}
+                          </td>
+                          <td className="px-4 py-3">
+                            {item.isSelected ? (
+                              <div>
+                                <input
+                                  type="text"
+                                  list={getSuggestionListId(idx)}
+                                  value={item.partyType === "VENDOR" ? item.bizPartnerName : item.doctorName}
+                                  onChange={(e) => updatePayableDoctorByName(idx, e.target.value)}
+                                  placeholder={
+                                    item.partyType === "VENDOR" ? "Type vendor name..." : "Type doctor name..."
+                                  }
+                                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                                />
+                                {item.partyType === "VENDOR"
+                                  ? !item.bizPartnerId &&
+                                    item.bizPartnerName.trim() && (
+                                      <p className="text-[10px] text-amber-600 mt-1">
+                                        Select a vendor from suggestions
+                                      </p>
+                                    )
+                                  : !item.doctorId &&
+                                    item.doctorName.trim() && (
+                                      <p className="text-[10px] text-amber-600 mt-1">
+                                        Select a doctor from suggestions
+                                      </p>
+                                    )}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-slate-400">-</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            {item.isSelected ? (
+                              <div>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={item.billedAmt}
+                                  step="0.01"
+                                  value={item.payableAmt}
+                                  onChange={(e) => {
+                                    const updated = [...payableItems];
+                                    updated[idx].payableAmt = e.target.value;
+                                    setPayableItems(updated);
+                                  }}
+                                  placeholder={`Max: ${item.billedAmt}`}
+                                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm text-right focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                                />
+                                {item.payableAmt && parseFloat(item.payableAmt) > item.billedAmt && (
+                                  <p className="text-[10px] text-red-500 mt-1">
+                                    Must be less than or equal to billed amount
+                                  </p>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-slate-400">-</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -770,7 +981,13 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
 
 export default function ReviewPage(props: { params: Promise<{ id: string }> }) {
   return (
-    <Suspense fallback={<DashboardLayout><div className="py-20 text-center text-slate-400">Loading...</div></DashboardLayout>}>
+    <Suspense
+      fallback={
+        <DashboardLayout>
+          <div className="py-20 text-center text-slate-400">Loading...</div>
+        </DashboardLayout>
+      }
+    >
       <ReviewPageContent {...props} />
     </Suspense>
   );

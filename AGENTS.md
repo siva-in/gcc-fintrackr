@@ -437,3 +437,15 @@ ConfigCategory→ config_category_enum
 Do not write runtime guards that check which fields exist.
 When proposing a schema change, the agent **must** advise whether the user needs to recreate the database.
 **Never run `npx prisma db push` at all — always ask the user for permission first.**
+
+---
+
+## 12. Build & Development Notes
+
+- When running `npm run build` to verify changes, do **not** delete the `.next` folder unless the build fails with a stale cache error. Use `npm run build` directly — Next.js handles incremental builds efficiently.
+
+## 13. Component Reuse
+
+- Always prefer using existing shared components in `frontend/src/components/ui/` over creating inline implementations.
+- The `Pagination` component is the single source of truth for all pagination needs — use it everywhere instead of duplicating pagination HTML/logic.
+- Before creating new UI patterns, check if a component already exists in the shared components directory.

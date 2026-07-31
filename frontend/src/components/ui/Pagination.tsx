@@ -12,18 +12,29 @@ interface PaginationProps {
 }
 
 export default function Pagination({ page, totalPages, total, limit, onPageChange }: PaginationProps) {
-  const [inputVal, setInputVal] = useState(page);
+  const [inputVal, setInputVal] = useState(String(page));
 
-  useEffect(() => { setInputVal(page); }, [page]);
+  useEffect(() => { setInputVal(String(page)); }, [page]);
 
   if (totalPages <= 1) return null;
 
   const from = (page - 1) * limit + 1;
   const to = Math.min(page * limit, total);
 
+  const commitPage = () => {
+    const val = parseInt(inputVal);
+    if (!isNaN(val)) {
+      const p = Math.max(1, Math.min(val, totalPages));
+      setInputVal(String(p));
+      if (p !== page) onPageChange(p);
+    } else {
+      setInputVal(String(page));
+    }
+  };
+
   const goTo = (val: number) => {
     const p = Math.max(1, Math.min(val, totalPages));
-    setInputVal(p);
+    setInputVal(String(p));
     if (p !== page) onPageChange(p);
   };
 
@@ -50,17 +61,14 @@ export default function Pagination({ page, totalPages, total, limit, onPageChang
         <div className="flex items-center gap-1 mx-1">
           <span className="text-sm text-slate-500">Page</span>
           <input
-            type="number"
-            min={1}
-            max={totalPages}
+            type="text"
+            inputMode="numeric"
             value={inputVal}
-            onChange={(e) => {
-              const val = parseInt(e.target.value);
-              if (!isNaN(val)) setInputVal(val);
-            }}
-            onBlur={() => goTo(inputVal)}
+            onChange={(e) => setInputVal(e.target.value)}
+            onBlur={commitPage}
+            onFocus={(e) => e.target.select()}
             onKeyDown={(e) => {
-              if (e.key === "Enter") goTo(inputVal);
+              if (e.key === "Enter") commitPage();
             }}
             className="w-14 px-2 py-1 text-sm text-center bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
           />

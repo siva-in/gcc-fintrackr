@@ -767,14 +767,14 @@ const reviewIPTxn = async (req, res) => {
           payableAmt: payAmt,
           balanceAmt: payAmt,
           status: "PENDING",
-          remarks: pay.name || null,
+          remarks: pay.description || null,
           createdBy: req.user?.username || null,
         };
 
         const existingPayable = pay.payableId
           ? await prisma.payable.findFirst({ where: { id: parseInt(pay.payableId), incomeTxnId: parseInt(id) } })
           : await prisma.payable.findFirst({
-              where: { incomeTxnId: parseInt(id), partyType, billedAmt, remarks: pay.name || null },
+              where: { incomeTxnId: parseInt(id), partyType, billedAmt, remarks: pay.description || null },
             });
 
         if (existingPayable) {
@@ -783,6 +783,7 @@ const reviewIPTxn = async (req, res) => {
             payableAmt: payAmt,
             balanceAmt: payAmt,
             status: "PENDING",
+            remarks: pay.description || null,
             drId: partyType === "DOCTOR" ? doctorId : null,
             bpId: partyType === "VENDOR" ? bizPartnerId : null,
           };

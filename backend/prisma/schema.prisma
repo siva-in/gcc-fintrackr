@@ -338,8 +338,8 @@ model RcvdPymt {
 model Payable {
   id            Int           @id @default(autoincrement())
   partyType     PartyType     @map("party_type")
-  drId        Int?          @map("party_id")
-  bpId        Int?          @map("biz_partner_id")
+  drId        Int?          @map("dr_id")
+  bpId        Int?          @map("bp_id")
   incomeTxnId Int
   billDate    DateTime      @db.Date
   dueDate     DateTime?     @db.Date

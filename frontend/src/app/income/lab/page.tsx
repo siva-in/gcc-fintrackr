@@ -6,7 +6,8 @@ import api from "@/lib/api";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import toast from "react-hot-toast";
-import { Upload, Search, X, Banknote, CreditCard, Wallet, TrendingUp, List, LayoutDashboard, FileText, AlertTriangle, Eye, Stethoscope, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Pencil, CheckCircle } from "lucide-react";
+import { Upload, Search, X, Banknote, CreditCard, Wallet, TrendingUp, List, LayoutDashboard, FileText, AlertTriangle, Eye, Stethoscope, CheckCircle } from "lucide-react";
+import Pagination from "@/components/ui/Pagination";
 
 interface Dashboard {
   cash: number;
@@ -305,7 +306,6 @@ export default function IncomeLabPage() {
     setPaymentModalOpen(true);
     try {
       const { data } = await api.get(`/income/lab/txns/${txn.id}`);
-      const billDate = txn.billDate ? new Date(txn.billDate).toISOString().split("T")[0] : new Date().toISOString().split("T")[0];
       const futureDate = txn.billDate ? new Date(new Date(txn.billDate).getTime() + 30 * 86400000).toISOString().split("T")[0] : new Date().toISOString().split("T")[0];
       const creditMode = paymentModes.find((m) => m.code === "CREDIT");
       const entries = (data.rcvdPymts || []).map((p: { paymentModeId: number; paymentMode: { id: number } | null; amount: number | null; paymentDate: string | null }) => ({
@@ -477,6 +477,13 @@ export default function IncomeLabPage() {
     fetchTxns(1, search, fromDate, toDate, txnPaymentFilter, txnStatusFilter);
   };
 
+  const handlePageChange = (p: number) => {
+    setPage(p);
+    fetchTxns(p, search, fromDate, toDate, txnPaymentFilter, txnStatusFilter);
+  };
+
+  const handleLogPageChange = (p: number) => setLogPage(p);
+
   const handleCardClick = (paymentMode?: string) => {
     setTxnPaymentFilter(paymentMode || "");
     setTxnStatusFilter("");
@@ -534,6 +541,7 @@ export default function IncomeLabPage() {
     }
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const openEditModal = async (txn: IncomeTxn) => {
     setEditModalOpen(true);
     setEditingTxn(null);
@@ -1003,69 +1011,8 @@ export default function IncomeLabPage() {
                   </table>
                 </div>
 
-                {hasSearched && pagination.pages > 1 && (
-                  <div className="flex items-center justify-between px-5 py-3.5 border-t border-slate-200/60 bg-slate-50/50">
-                    <p className="text-sm text-slate-400">
-                      Showing {(pagination.page - 1) * 10 + 1} to {Math.min(pagination.page * 10, pagination.total)} of {pagination.total}
-                    </p>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => { setPage(1); fetchTxns(1, search, fromDate, toDate, txnPaymentFilter, txnStatusFilter); }}
-                        disabled={page === 1}
-                        className="px-2.5 py-1.5 text-sm rounded-lg font-medium transition-all bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        <ChevronsLeft size={16} />
-                      </button>
-                      <button
-                        onClick={() => { const p = page - 1; setPage(p); fetchTxns(p, search, fromDate, toDate, txnPaymentFilter, txnStatusFilter); }}
-                        disabled={page === 1}
-                        className="px-2.5 py-1.5 text-sm rounded-lg font-medium transition-all bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        <ChevronLeft size={16} />
-                      </button>
-                      <div className="flex items-center gap-1 mx-1">
-                        <span className="text-sm text-slate-500">Page</span>
-                        <input
-                          type="number"
-                          min={1}
-                          max={pagination.pages}
-                          value={page}
-                          onChange={(e) => {
-                            const val = parseInt(e.target.value);
-                            if (val >= 1 && val <= pagination.pages) {
-                              setPage(val);
-                              fetchTxns(val, search, fromDate, toDate, txnPaymentFilter, txnStatusFilter);
-                            }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              const val = parseInt((e.target as HTMLInputElement).value);
-                              if (val >= 1 && val <= pagination.pages) {
-                                setPage(val);
-                                fetchTxns(val, search, fromDate, toDate, txnPaymentFilter, txnStatusFilter);
-                              }
-                            }
-                          }}
-                          className="w-14 px-2 py-1 text-sm text-center bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                        />
-                        <span className="text-sm text-slate-500">of {pagination.pages}</span>
-                      </div>
-                      <button
-                        onClick={() => { const p = page + 1; setPage(p); fetchTxns(p, search, fromDate, toDate, txnPaymentFilter, txnStatusFilter); }}
-                        disabled={page === pagination.pages}
-                        className="px-2.5 py-1.5 text-sm rounded-lg font-medium transition-all bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        <ChevronRight size={16} />
-                      </button>
-                      <button
-                        onClick={() => { setPage(pagination.pages); fetchTxns(pagination.pages, search, fromDate, toDate, txnPaymentFilter, txnStatusFilter); }}
-                        disabled={page === pagination.pages}
-                        className="px-2.5 py-1.5 text-sm rounded-lg font-medium transition-all bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        <ChevronsRight size={16} />
-                      </button>
-                    </div>
-                  </div>
+                {hasSearched && (
+                  <Pagination page={page} totalPages={pagination.pages} total={pagination.total} limit={10} onPageChange={handlePageChange} />
                 )}
               </div>
             </>
@@ -1162,43 +1109,7 @@ export default function IncomeLabPage() {
                 </div>
 
                 {logPagination.pages > 1 && (
-                  <div className="flex items-center justify-between px-5 py-3.5 border-t border-slate-200/60 bg-slate-50/50">
-                    <p className="text-sm text-slate-400">
-                      Showing {(logPagination.page - 1) * 10 + 1} to {Math.min(logPagination.page * 10, logPagination.total)} of {logPagination.total}
-                    </p>
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => setLogPage(1)} disabled={logPage === 1}
-                        className="px-2.5 py-1.5 text-sm rounded-lg font-medium transition-all bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        <ChevronsLeft size={16} />
-                      </button>
-                      <button onClick={() => setLogPage(logPage - 1)} disabled={logPage === 1}
-                        className="px-2.5 py-1.5 text-sm rounded-lg font-medium transition-all bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        <ChevronLeft size={16} />
-                      </button>
-                      <div className="flex items-center gap-1 mx-1">
-                        <span className="text-sm text-slate-500">Page</span>
-                        <input
-                          type="number" min={1} max={logPagination.pages} value={logPage}
-                          onChange={(e) => { const val = parseInt(e.target.value); if (val >= 1 && val <= logPagination.pages) setLogPage(val); }}
-                          onKeyDown={(e) => { if (e.key === "Enter") { const val = parseInt((e.target as HTMLInputElement).value); if (val >= 1 && val <= logPagination.pages) setLogPage(val); } }}
-                          className="w-14 px-2 py-1 text-sm text-center bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                        />
-                        <span className="text-sm text-slate-500">of {logPagination.pages}</span>
-                      </div>
-                      <button onClick={() => setLogPage(logPage + 1)} disabled={logPage === logPagination.pages}
-                        className="px-2.5 py-1.5 text-sm rounded-lg font-medium transition-all bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        <ChevronRight size={16} />
-                      </button>
-                      <button onClick={() => setLogPage(logPagination.pages)} disabled={logPage === logPagination.pages}
-                        className="px-2.5 py-1.5 text-sm rounded-lg font-medium transition-all bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        <ChevronsRight size={16} />
-                      </button>
-                    </div>
-                  </div>
+                  <Pagination page={logPage} totalPages={logPagination.pages} total={logPagination.total} limit={10} onPageChange={handleLogPageChange} />
                 )}
               </div>
             </>

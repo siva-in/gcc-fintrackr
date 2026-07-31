@@ -7,7 +7,8 @@ import api from "@/lib/api";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import toast from "react-hot-toast";
-import { Upload, Search, X, Banknote, CreditCard, Wallet, TrendingUp, List, LayoutDashboard, FileText, Clock, CheckCircle2, XCircle, Eye, Stethoscope, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { Upload, Search, X, Banknote, CreditCard, Wallet, TrendingUp, List, LayoutDashboard, FileText, Clock, CheckCircle2, XCircle, Eye, Stethoscope } from "lucide-react";
+import Pagination from "@/components/ui/Pagination";
 
 interface Dashboard {
   cash: number;
@@ -229,7 +230,6 @@ function IncomeIPPageContent() {
     }
   }, [dashFromDate, dashToDate]);
 
-  useEffect(() => { fetchDashboard(); fetchDoctorSummary(); fetchPaymentModes(); }, [fetchDashboard, fetchDoctorSummary]);
 
   useEffect(() => {
     if (searchParams.get("tab") === "transactions") {
@@ -300,6 +300,13 @@ function IncomeIPPageContent() {
     setPage(1);
     fetchTxns(1, search, fromDate, toDate, txnStatusFilter, pymtStatusFilter);
   };
+
+  const handlePageChange = (p: number) => {
+    setPage(p);
+    fetchTxns(p, search, fromDate, toDate, txnStatusFilter, pymtStatusFilter);
+  };
+
+  const handleLogPageChange = (p: number) => setLogPage(p);
 
   const handleCardClick = (pymtStatus?: string) => {
     setPymtStatusFilter(pymtStatus || "");
@@ -480,6 +487,14 @@ function IncomeIPPageContent() {
     case "REVIEW_REQ": return "bg-red-50 text-red-600";
       case "ERROR": return "bg-red-50 text-red-600";
       default: return "bg-slate-50 text-slate-500";
+    }
+  };
+
+  const getPymtStatusColor = (status: string) => {
+    switch (status) {
+      case "FULLYPAID": return "bg-emerald-50 text-emerald-600";
+      case "PARTIALPAID": return "bg-amber-50 text-amber-600";
+      default: return "bg-red-50 text-red-600";
     }
   };
 
@@ -749,26 +764,30 @@ function IncomeIPPageContent() {
                       <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Bill No</th>
                       <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden sm:table-cell">Date</th>
                       <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Patient</th>
-                      <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden md:table-cell">UHID</th>
-                      <th className="text-right px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Amount</th>
+                      <th className="text-right px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Total Amt</th>
+                      <th className="text-right px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Discount</th>
+                      <th className="text-right px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Net Amt</th>
+                      <th className="text-right px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Adv Adj</th>
+                      <th className="text-right px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Final Amt</th>
                       <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Payment</th>
+                      <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Pymt Status</th>
                       <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Txn Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {!hasSearched ? (
-                      <tr><td colSpan={7} className="text-center py-12 text-slate-400">
-                        Use the search or date filter to view transactions
-                      </td></tr>
-                    ) : loading ? (
-                      <tr><td colSpan={7} className="text-center py-12 text-slate-400">
-                        <div className="flex items-center justify-center gap-2">
-                          <div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin" />
-                          Loading...
-                        </div>
-                      </td></tr>
-                    ) : txns.length === 0 ? (
-                      <tr><td colSpan={7} className="text-center py-12 text-slate-400">No transactions found</td></tr>
+                        <tr><td colSpan={11} className="text-center py-12 text-slate-400">
+                          Use the search or date filter to view transactions
+                        </td></tr>
+                      ) : loading ? (
+                        <tr><td colSpan={11} className="text-center py-12 text-slate-400">
+                          <div className="flex items-center justify-center gap-2">
+                            <div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin" />
+                            Loading...
+                          </div>
+                        </td></tr>
+                      ) : txns.length === 0 ? (
+                        <tr><td colSpan={11} className="text-center py-12 text-slate-400">No transactions found</td></tr>
                     ) : (
                         txns.map((txn) => {
                           const isReviewReq = txn.txn_status === "REVIEW_REQ";
@@ -785,13 +804,16 @@ function IncomeIPPageContent() {
                               params.set("page", String(page));
                               router.push(`/income/ip/review/${txn.id}?${params.toString()}`);
                             }}
-                            className={`cursor-pointer hover:bg-slate-50/80 ${txn.txn_status === "ERROR" ? "bg-red-50/50" : txn.txn_status === "UNVERIFIED" ? "bg-orange-50/30" : ""}`}
+                            className={`cursor-pointer group hover:bg-slate-50/80 ${txn.txn_status === "ERROR" ? "bg-red-50/50" : txn.txn_status === "UNVERIFIED" ? "bg-orange-50/30" : ""}`}
                           >
-                            <td className={`px-5 py-3.5 font-medium ${isReviewReq ? "text-red-600" : "text-slate-700"}`}>{txn.billNo}</td>
-                            <td className={`px-5 py-3.5 hidden sm:table-cell ${isReviewReq ? "text-red-600" : "text-slate-500"}`}>{formatDate(txn.billDate)}</td>
-                            <td className={`px-5 py-3.5 ${isReviewReq ? "text-red-600" : "text-slate-700"}`}>{txn.patient?.name || "-"}</td>
-                            <td className={`px-5 py-3.5 hidden md:table-cell ${isReviewReq ? "text-red-600" : "text-slate-500"}`}>{txn.patient?.uhid || "-"}</td>
-                            <td className={`px-5 py-3.5 text-right font-medium ${isReviewReq ? "text-red-600" : "text-slate-700"}`}>{txn.netAmount ? formatCurrency(Number(txn.netAmount)) : "-"}</td>
+                            <td className={`px-5 py-3.5 font-medium group-hover:text-purple-700 ${isReviewReq ? "text-red-600" : "text-slate-700"}`}>{txn.billNo}</td>
+                            <td className={`px-5 py-3.5 hidden sm:table-cell group-hover:text-purple-700 ${isReviewReq ? "text-red-600" : "text-slate-500"}`}>{formatDate(txn.billDate)}</td>
+                            <td className={`px-5 py-3.5 group-hover:text-purple-700 ${isReviewReq ? "text-red-600" : "text-slate-700"}`}>{txn.patient?.name || "-"}</td>
+                            <td className="px-5 py-3.5 text-right font-medium group-hover:text-purple-700 text-slate-700">{txn.grossAmount ? formatCurrency(Number(txn.grossAmount)) : "-"}</td>
+                            <td className="px-5 py-3.5 text-right font-medium group-hover:text-purple-700 text-slate-700">{txn.discountAmount ? formatCurrency(Number(txn.discountAmount)) : "-"}</td>
+                            <td className="px-5 py-3.5 text-right font-medium group-hover:text-purple-700 text-slate-700">{formatCurrency((Number(txn.grossAmount) || 0) - (Number(txn.discountAmount) || 0))}</td>
+                            <td className="px-5 py-3.5 text-right font-medium group-hover:text-purple-700 text-slate-700">{txn.advAdjt ? formatCurrency(Number(txn.advAdjt)) : "-"}</td>
+                            <td className={`px-5 py-3.5 text-right font-medium group-hover:text-purple-700 ${isReviewReq ? "text-red-600" : "text-slate-700"}`}>{txn.netAmount ? formatCurrency(Number(txn.netAmount)) : "-"}</td>
                             <td className="px-5 py-3.5">
                               <div className="flex flex-wrap gap-1">
                                 {txn.rcvdPymts.map((p, i) => (
@@ -802,6 +824,11 @@ function IncomeIPPageContent() {
                                 ))}
                                 {txn.rcvdPymts.length === 0 && <span className="text-xs text-slate-400">-</span>}
                               </div>
+                            </td>
+                            <td className="px-5 py-3.5">
+                              <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium ${getPymtStatusColor(txn.pymt_status)}`}>
+                                {txn.pymt_status}
+                              </span>
                             </td>
                             <td className={`px-5 py-3.5 ${isReviewReq ? "text-red-600" : ""}`}>
                               <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(txn.txn_status)}`}>
@@ -816,69 +843,8 @@ function IncomeIPPageContent() {
                 </table>
               </div>
 
-              {hasSearched && pagination.pages > 1 && (
-                <div className="flex items-center justify-between px-5 py-3.5 border-t border-slate-200/60 bg-slate-50/50">
-                  <p className="text-sm text-slate-400">
-                    Showing {(pagination.page - 1) * 10 + 1} to {Math.min(pagination.page * 10, pagination.total)} of {pagination.total}
-                  </p>
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => { setPage(1); fetchTxns(1, search, fromDate, toDate, txnStatusFilter, pymtStatusFilter); }}
-                      disabled={page === 1}
-                      className="px-2.5 py-1.5 text-sm rounded-lg font-medium transition-all bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      <ChevronsLeft size={16} />
-                    </button>
-                    <button
-                      onClick={() => { const p = page - 1; setPage(p); fetchTxns(p, search, fromDate, toDate, txnStatusFilter, pymtStatusFilter); }}
-                      disabled={page === 1}
-                      className="px-2.5 py-1.5 text-sm rounded-lg font-medium transition-all bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      <ChevronLeft size={16} />
-                    </button>
-                    <div className="flex items-center gap-1 mx-1">
-                      <span className="text-sm text-slate-500">Page</span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={pagination.pages}
-                        value={page}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value);
-                          if (val >= 1 && val <= pagination.pages) {
-                            setPage(val);
-                            fetchTxns(val, search, fromDate, toDate, txnStatusFilter, pymtStatusFilter);
-                          }
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            const val = parseInt((e.target as HTMLInputElement).value);
-                            if (val >= 1 && val <= pagination.pages) {
-                              setPage(val);
-                              fetchTxns(val, search, fromDate, toDate, txnStatusFilter, pymtStatusFilter);
-                            }
-                          }
-                        }}
-                        className="w-14 px-2 py-1 text-sm text-center bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                      />
-                      <span className="text-sm text-slate-500">of {pagination.pages}</span>
-                    </div>
-                    <button
-                      onClick={() => { const p = page + 1; setPage(p); fetchTxns(p, search, fromDate, toDate, txnStatusFilter, pymtStatusFilter); }}
-                      disabled={page === pagination.pages}
-                      className="px-2.5 py-1.5 text-sm rounded-lg font-medium transition-all bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      <ChevronRight size={16} />
-                    </button>
-                    <button
-                      onClick={() => { setPage(pagination.pages); fetchTxns(pagination.pages, search, fromDate, toDate, txnStatusFilter, pymtStatusFilter); }}
-                      disabled={page === pagination.pages}
-                      className="px-2.5 py-1.5 text-sm rounded-lg font-medium transition-all bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      <ChevronsRight size={16} />
-                    </button>
-                  </div>
-                </div>
+              {hasSearched && (
+                <Pagination page={page} totalPages={pagination.pages} total={pagination.total} limit={10} onPageChange={handlePageChange} />
               )}
             </div>
           </>
@@ -978,62 +944,7 @@ function IncomeIPPageContent() {
               </div>
 
               {logPagination.pages > 1 && (
-                <div className="flex items-center justify-between px-5 py-3.5 border-t border-slate-200/60 bg-slate-50/50">
-                  <p className="text-sm text-slate-400">
-                    Showing {(logPagination.page - 1) * 10 + 1} to {Math.min(logPagination.page * 10, logPagination.total)} of {logPagination.total}
-                  </p>
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => setLogPage(1)}
-                      disabled={logPage === 1}
-                      className="px-2.5 py-1.5 text-sm rounded-lg font-medium transition-all bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      <ChevronsLeft size={16} />
-                    </button>
-                    <button
-                      onClick={() => setLogPage(logPage - 1)}
-                      disabled={logPage === 1}
-                      className="px-2.5 py-1.5 text-sm rounded-lg font-medium transition-all bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      <ChevronLeft size={16} />
-                    </button>
-                    <div className="flex items-center gap-1 mx-1">
-                      <span className="text-sm text-slate-500">Page</span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={logPagination.pages}
-                        value={logPage}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value);
-                          if (val >= 1 && val <= logPagination.pages) setLogPage(val);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            const val = parseInt((e.target as HTMLInputElement).value);
-                            if (val >= 1 && val <= logPagination.pages) setLogPage(val);
-                          }
-                        }}
-                        className="w-14 px-2 py-1 text-sm text-center bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                      />
-                      <span className="text-sm text-slate-500">of {logPagination.pages}</span>
-                    </div>
-                    <button
-                      onClick={() => setLogPage(logPage + 1)}
-                      disabled={logPage === logPagination.pages}
-                      className="px-2.5 py-1.5 text-sm rounded-lg font-medium transition-all bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      <ChevronRight size={16} />
-                    </button>
-                    <button
-                      onClick={() => setLogPage(logPagination.pages)}
-                      disabled={logPage === logPagination.pages}
-                      className="px-2.5 py-1.5 text-sm rounded-lg font-medium transition-all bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      <ChevronsRight size={16} />
-                    </button>
-                  </div>
-                </div>
+                <Pagination page={logPage} totalPages={logPagination.pages} total={logPagination.total} limit={10} onPageChange={handleLogPageChange} />
               )}
             </div>
           </>
