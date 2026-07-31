@@ -2,7 +2,7 @@
 
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, Suspense } from "react";
 import api from "@/lib/api";
 import Button from "@/components/ui/Button";
 import toast from "react-hot-toast";
@@ -34,6 +34,9 @@ interface PaymentEntry {
   amount: string;
   paymentDate: string;
   dueDate: string;
+  insurancePartnerId: string;
+  insurancePartnerName: string;
+  remarks: string;
 }
 
 const toDateInputValue = (d: string | null | undefined) => {
@@ -44,6 +47,14 @@ const toDateInputValue = (d: string | null | undefined) => {
 };
 
 export default function EditTransactionPage() {
+  return (
+    <Suspense fallback={null}>
+      <EditTransactionPageContent />
+    </Suspense>
+  );
+}
+
+function EditTransactionPageContent() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -70,7 +81,19 @@ export default function EditTransactionPage() {
     return `/income/op${qs ? `?${qs}` : ""}`;
   };
 
-  const goBack = () => router.push(buildBackUrl());
+  const goBack = () => {
+    sessionStorage.setItem("opFilterState", JSON.stringify({
+      page: searchParams.get("page") || "1",
+      search: searchParams.get("search") || "",
+      fromDate: searchParams.get("fromDate") || "",
+      toDate: searchParams.get("toDate") || "",
+      txnPaymentFilter: searchParams.get("pm") || "",
+      txnDoctorFilter: searchParams.get("docId") || "",
+      txnStatusFilter: searchParams.get("txnStatus") || "",
+      activeTab: searchParams.get("tab") || "transactions",
+    }));
+    router.push(buildBackUrl());
+  };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   type ApiData = any;
@@ -84,23 +107,28 @@ export default function EditTransactionPage() {
   const [grossAmount, setGrossAmount] = useState("");
   const [discountAmount, setDiscountAmount] = useState("");
   const [errorReason, setErrorReason] = useState("");
+  const [remarks, setRemarks] = useState("");
 
   const [payables, setPayables] = useState<PayableEntry[]>([]);
   const [payments, setPayments] = useState<PaymentEntry[]>([]);
+  const [insurancePartners, setInsurancePartners] = useState<{ id: number; bpName: string }[]>([]);
+  const insuranceSuggestionsId = "op-edit-insurance-suggestions";
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [txnRes, doctorsRes, modesRes] = await Promise.all([
+        const [txnRes, doctorsRes, modesRes, insuranceRes] = await Promise.all([
           api.get(`/income/txns/${id}`),
           api.get("/doctors?all=true"),
           api.get("/income/payment-modes"),
+          api.get("/income/insurance-partners"),
         ]);
         const data: ApiData = txnRes.data;
         setTxn(data);
         setGrossAmount(data.grossAmount != null ? String(data.grossAmount) : "");
         setDiscountAmount(data.discountAmount != null ? String(data.discountAmount) : "");
         setErrorReason(data.errorReason || "");
+        setRemarks(data.remarks || "");
 
         const initialPayables: PayableEntry[] = (data.payables || []).map((p: ApiData) => ({
           id: p.id,
@@ -114,9 +142,12 @@ export default function EditTransactionPage() {
 
         setDoctors(doctorsRes.data || []);
         setPaymentModes(modesRes.data || []);
+        setInsurancePartners(insuranceRes.data || []);
 
         const creditMode = (modesRes.data || []).find((m: ApiData) => m.code === "CREDIT");
         const creditModeId = creditMode?.id;
+        const insuranceMode = (modesRes.data || []).find((m: ApiData) => m.code === "INSURANCE");
+        const insuranceModeId = insuranceMode?.id;
 
         const rcvdPymtEntries = (data.rcvdPymts || []).map((p: ApiData) => ({
           id: p.id,
@@ -124,14 +155,20 @@ export default function EditTransactionPage() {
           amount: p.amount != null ? String(p.amount) : "",
           paymentDate: toDateInputValue(p.paymentDate),
           dueDate: "",
+          insurancePartnerId: "",
+          insurancePartnerName: "",
+          remarks: p.remarks || "",
         }));
 
         const receivableEntries = (data.receivables || []).map((r: ApiData) => ({
           id: r.id,
-          paymentModeId: creditModeId || 0,
+          paymentModeId: r.arType === "INSURANCE" ? (insuranceModeId || 0) : (creditModeId || 0),
           amount: r.dueAmt != null ? String(r.dueAmt) : "",
           paymentDate: toDateInputValue(r.dueDate),
           dueDate: toDateInputValue(r.dueDate),
+          insurancePartnerId: r.arType === "INSURANCE" ? (r.bizPartner?.id ? String(r.bizPartner.id) : "") : "",
+          insurancePartnerName: r.arType === "INSURANCE" ? (r.bizPartner?.bpName || "") : "",
+          remarks: r.arType === "INSURANCE" ? "Insurance receivable" : "Credit receivable",
         }));
 
         setPayments([...rcvdPymtEntries, ...receivableEntries]);
@@ -191,7 +228,7 @@ export default function EditTransactionPage() {
   };
 
   const handleAddPayment = () => {
-    setPayments((prev) => [...prev, { id: null, paymentModeId: 0, amount: "", paymentDate: toDateInputValue(txn?.billDate), dueDate: "" }]);
+    setPayments((prev) => [...prev, { id: null, paymentModeId: 0, amount: "", paymentDate: toDateInputValue(txn?.billDate), dueDate: "", insurancePartnerId: "", insurancePartnerName: "", remarks: "" }]);
   };
 
   const handleRemovePayment = (idx: number) => {
@@ -200,6 +237,15 @@ export default function EditTransactionPage() {
 
   const handlePaymentChange = (idx: number, field: keyof PaymentEntry, value: string) => {
     setPayments((prev) => prev.map((p, i) => (i === idx ? { ...p, [field]: value } : p)));
+  };
+
+  const updateInsurancePartnerByName = (idx: number, inputName: string) => {
+    const selected = insurancePartners.find((p) => p.bpName.toLowerCase() === inputName.trim().toLowerCase());
+    setPayments((prev) => prev.map((p, i) =>
+      i === idx
+        ? { ...p, insurancePartnerName: inputName, insurancePartnerId: selected ? String(selected.id) : "" }
+        : p
+    ));
   };
 
   const handleSave = async () => {
@@ -226,9 +272,12 @@ export default function EditTransactionPage() {
     const today = new Date().toISOString().split("T")[0];
     for (const pmt of payments) {
       if (!pmt.paymentModeId || !pmt.amount) continue;
-      const selMode = paymentModes.find((m) => m.id === pmt.paymentModeId);
-      if (selMode?.code === "CREDIT" && pmt.dueDate && pmt.dueDate < today) {
+      const selMode = paymentModes.find((m) => String(m.id) === String(pmt.paymentModeId));
+      if ((selMode?.code === "CREDIT" || selMode?.code === "INSURANCE") && pmt.dueDate && pmt.dueDate < today) {
         return toast.error("Due date must be today or a future date");
+      }
+      if (selMode?.code === "INSURANCE" && !pmt.insurancePartnerId) {
+        return toast.error("Please select an insurance company");
       }
     }
 
@@ -239,6 +288,7 @@ export default function EditTransactionPage() {
         discountAmount: String(d),
         netAmount: String(n),
         errorReason: errorReason || null,
+        remarks: remarks || null,
         payables: payables.map((p) => ({
           id: p.id,
           doctorId: p.doctorId || undefined,
@@ -250,6 +300,8 @@ export default function EditTransactionPage() {
           paymentModeId: pmt.paymentModeId || undefined,
           amount: pmt.amount || undefined,
           paymentDate: pmt.paymentDate || undefined,
+          dueDate: pmt.dueDate || undefined,
+          insurancePartnerId: pmt.insurancePartnerId || undefined,
         })).filter((pmt) => pmt.paymentModeId && pmt.amount),
       };
 
@@ -323,22 +375,14 @@ export default function EditTransactionPage() {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-4 mt-4 pt-4 border-t border-slate-100">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mt-4 pt-4 border-t border-slate-100">
             <div>
-              <span className="text-xs text-slate-400 block">Bill Date</span>
+              <span className="text-xs text-slate-400 block">Date</span>
               <span className="text-sm font-medium text-slate-700">{formatDate(txn.billDate)}</span>
             </div>
             <div>
               <span className="text-xs text-slate-400 block">UHID</span>
               <span className="text-sm font-medium text-slate-700">{txn.patient?.uhid || "-"}</span>
-            </div>
-            <div>
-              <span className="text-xs text-slate-400 block">Gross Amount</span>
-              <input type="number" value={grossAmount} onChange={(e) => handleGrossChange(e.target.value)} className="w-28 px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" />
-            </div>
-            <div>
-              <span className="text-xs text-slate-400 block">Discount</span>
-              <input type="number" value={discountAmount} onChange={(e) => handleDiscountChange(e.target.value)} className="w-28 px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" />
             </div>
             <div>
               <span className="text-xs text-slate-400 block">Txn Status</span>
@@ -347,6 +391,30 @@ export default function EditTransactionPage() {
             <div>
               <span className="text-xs text-slate-400 block">Payment Status</span>
               <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${statusBadge(txn.pymt_status)}`}>{txn.pymt_status}</span>
+            </div>
+            <div>
+              <span className="text-xs font-medium text-slate-500 block mb-1">Gross</span>
+              <div className="flex items-center bg-white border border-indigo-200 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500 shadow-sm">
+                <span className="pl-2.5 text-sm text-slate-400">₹</span>
+                <input
+                  type="number"
+                  value={grossAmount}
+                  onChange={(e) => handleGrossChange(e.target.value)}
+                  className="w-full px-2 py-1.5 text-sm font-medium text-slate-800 outline-none"
+                />
+              </div>
+            </div>
+            <div>
+              <span className="text-xs font-medium text-slate-500 block mb-1">Discount</span>
+              <div className="flex items-center bg-white border border-indigo-200 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500 shadow-sm">
+                <span className="pl-2.5 text-sm text-slate-400">₹</span>
+                <input
+                  type="number"
+                  value={discountAmount}
+                  onChange={(e) => handleDiscountChange(e.target.value)}
+                  className="w-full px-2 py-1.5 text-sm font-medium text-slate-800 outline-none"
+                />
+              </div>
             </div>
             {txn.errorReason && (
               <div className="max-w-xs">
@@ -435,6 +503,23 @@ export default function EditTransactionPage() {
             </Button>
           </div>
 
+          <datalist id={insuranceSuggestionsId}>
+            {insurancePartners.map((p) => (
+              <option key={p.id} value={p.bpName} />
+            ))}
+          </datalist>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Remarks</label>
+            <textarea
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+              rows={2}
+              placeholder="Add transaction remarks..."
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+            />
+          </div>
+
           {totalPaymentAmt > 0 && (
             <p className="text-xs text-slate-500">
               Total: {formatCurrency(totalPaymentAmt)} / {formatCurrency(net)}
@@ -461,7 +546,7 @@ export default function EditTransactionPage() {
                   <label className="block text-xs font-medium text-slate-500 mb-1">Mode</label>
                   <select value={pmt.paymentModeId} onChange={(e) => handlePaymentChange(idx, "paymentModeId", e.target.value)} className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500">
                     <option value={0}>Select mode...</option>
-                    {paymentModes.filter((m) => m.code !== "INSURANCE").map((m) => (
+                    {paymentModes.map((m) => (
                       <option key={m.id} value={m.id}>{m.name} ({m.code})</option>
                     ))}
                   </select>
@@ -471,22 +556,23 @@ export default function EditTransactionPage() {
                   <input type="number" value={pmt.amount} onChange={(e) => handlePaymentChange(idx, "amount", e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" />
                 </div>
                 {(() => {
-                  const selMode = paymentModes.find((m) => m.id === pmt.paymentModeId);
+                  const selMode = paymentModes.find((m) => String(m.id) === String(pmt.paymentModeId));
                   const isCredit = selMode?.code === "CREDIT";
+                  const isInsurance = selMode?.code === "INSURANCE";
                   const today = new Date().toISOString().split("T")[0];
-                  const dateVal = isCredit ? pmt.dueDate : pmt.paymentDate;
+                  const dateVal = isCredit || isInsurance ? pmt.dueDate : pmt.paymentDate;
                   return (
                     <div>
                       <label className="block text-xs font-medium text-slate-500 mb-1">
-                        {isCredit ? "Due Date" : "Payment Date"}
-                        {isCredit && <span className="text-amber-500 ml-1">(today or future)</span>}
+                        {isCredit || isInsurance ? "Payment Due Date" : "Payment Date"}
+                        {(isCredit || isInsurance) && <span className="text-amber-500 ml-1">(today or future)</span>}
                       </label>
                       <input
                         type="date"
-                        min={isCredit ? today : undefined}
+                        min={isCredit || isInsurance ? today : undefined}
                         value={dateVal}
                         onChange={(e) => {
-                          if (isCredit) {
+                          if (isCredit || isInsurance) {
                             handlePaymentChange(idx, "dueDate", e.target.value);
                             handlePaymentChange(idx, "paymentDate", e.target.value);
                           } else {
@@ -499,6 +585,27 @@ export default function EditTransactionPage() {
                   );
                 })()}
               </div>
+              {(() => {
+                const selMode = paymentModes.find((m) => String(m.id) === String(pmt.paymentModeId));
+                const isInsurance = selMode?.code === "INSURANCE";
+                if (!isInsurance) return null;
+                return (
+                  <div className="mt-3">
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Insurance Company</label>
+                    <input
+                      type="text"
+                      list={insuranceSuggestionsId}
+                      value={pmt.insurancePartnerName}
+                      onChange={(e) => updateInsurancePartnerByName(idx, e.target.value)}
+                      placeholder="Type insurance company..."
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    />
+                    {!pmt.insurancePartnerId && pmt.insurancePartnerName.trim() && (
+                      <p className="text-[10px] text-amber-600 mt-1">Select an insurance company from suggestions</p>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           ))}
         </div>

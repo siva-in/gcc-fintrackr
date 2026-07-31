@@ -58,7 +58,7 @@ const IP_FILTER_CONFIGS = [
   { code: "SLEEP STUDY", value: "VENDOR" },
   { code: "DMO", value: "DOCTOR" },
   { code: "EEG", value: "VENDOR" },
-  { code: "Implant", value: "DOCTOR, VENDOR" },
+  { code: "IMPLANT", value: "DOCTOR, VENDOR" },
 ];
 
 async function seedIncomeSources(runner) {

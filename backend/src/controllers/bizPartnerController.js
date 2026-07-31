@@ -110,7 +110,7 @@ const deleteBizPartner = async (req, res) => {
 module.exports = { getBizPartners, getBizPartner, createBizPartner, updateBizPartner, deleteBizPartner };
 module.exports.validation = {
   create: [
-    body("bpType").isIn(["VENDOR", "INSURANCE", "CORPORATE", "LAB", "RADIOLOGY", "GOVERNMENT", "OTHER"]).withMessage("Invalid business partner type"),
+    body("bpType").isIn(["VENDOR", "INSURANCE", "CORPORATE", "LAB", "RADIOLOGY", "GOVERNMENT", "OTHER", "REFERRAL"]).withMessage("Invalid business partner type"),
     body("bpName").notEmpty().withMessage("Name is required"),
     body("contactName").optional(),
     body("mobile").optional(),
@@ -120,7 +120,7 @@ module.exports.validation = {
     body("isActive").optional().isBoolean(),
   ],
   update: [
-    body("bpType").optional().isIn(["VENDOR", "INSURANCE", "CORPORATE", "LAB", "RADIOLOGY", "GOVERNMENT", "OTHER"]),
+    body("bpType").optional().isIn(["VENDOR", "INSURANCE", "CORPORATE", "LAB", "RADIOLOGY", "GOVERNMENT", "OTHER", "REFERRAL"]),
     body("bpName").optional().notEmpty(),
     body("contactName").optional(),
     body("mobile").optional(),

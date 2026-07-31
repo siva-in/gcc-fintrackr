@@ -1,7 +1,7 @@
 const express = require("express");
 const multer = require("multer");
 const router = express.Router();
-const { importOPBilling, importOPDetailReport, getImportLogs, getImportErrors, getDashboard, getIncomeTxns, getPayables, getDoctorPayableSummary, getIncomeTxnDetail, updateIncomeTxnError, updateIncomeTxnFull, getDoctorPayables, recordPayablePayment, getPaymentModes, bulkVerifyTxns } = require("../controllers/incomeController");
+const { importOPBilling, importOPDetailReport, getImportLogs, getImportErrors, getDashboard, getIncomeTxns, getPayables, getDoctorPayableSummary, getIncomeTxnDetail, updateIncomeTxnError, updateIncomeTxnFull, getDoctorPayables, recordPayablePayment, getPaymentModes, bulkVerifyTxns, getInsurancePartners } = require("../controllers/incomeController");
 const { authenticate, requireCompanyRole } = require("../middleware/auth");
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -17,6 +17,7 @@ router.put("/txns/:id", updateIncomeTxnFull);
 router.post("/txns/bulk-verify", bulkVerifyTxns);
 router.get("/payables", getPayables);
 router.get("/payment-modes", getPaymentModes);
+router.get("/insurance-partners", getInsurancePartners);
 router.get("/import-logs", getImportLogs);
 router.get("/import-logs/:id/errors", getImportErrors);
 router.get("/doctor-payables", getDoctorPayables);

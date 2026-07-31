@@ -365,16 +365,33 @@ function IncomeOPPageContent() {
   }, [activeTab, logPage]);
 
   useEffect(() => {
-    const ss = urlSearchParams.get("search") || "";
-    const sfd = urlSearchParams.get("fromDate") || "";
-    const std = urlSearchParams.get("toDate") || "";
-    const spf = urlSearchParams.get("pm") || "";
-    const sdf = urlSearchParams.get("docId") || "";
-    const ssf = urlSearchParams.get("txnStatus") || "";
-    const sp = urlSearchParams.get("page") || "1";
-    const tab = (urlSearchParams.get("tab") || "transactions") as "dashboard" | "transactions" | "importlog";
-    const fromUrl = ss || sfd || std || spf || sdf || ssf;
-    if (fromUrl) {
+    const saved = sessionStorage.getItem("opFilterState");
+    if (saved) {
+      sessionStorage.removeItem("opFilterState");
+      try {
+        const { page: sp, search: ss, fromDate: sfd, toDate: std, txnPaymentFilter: spf, txnDoctorFilter: sdf, txnStatusFilter: ssf } = JSON.parse(saved);
+        setPage(Number(sp) || 1);
+        setSearch(ss || "");
+        setFromDate(sfd || "");
+        setToDate(std || "");
+        setTxnPaymentFilter(spf || "");
+        setTxnDoctorFilter(sdf || "");
+        setTxnStatusFilter(ssf || "");
+        setActiveTab("transactions");
+        setHasSearched(true);
+        fetchTxns(Number(sp) || 1, ss || "", sfd || "", std || "", spf || "", sdf || "", ssf || "");
+        return;
+      } catch {}
+    }
+    if (urlSearchParams.has("tab") || urlSearchParams.has("page")) {
+      const ss = urlSearchParams.get("search") || "";
+      const sfd = urlSearchParams.get("fromDate") || "";
+      const std = urlSearchParams.get("toDate") || "";
+      const spf = urlSearchParams.get("pm") || "";
+      const sdf = urlSearchParams.get("docId") || "";
+      const ssf = urlSearchParams.get("txnStatus") || "";
+      const sp = urlSearchParams.get("page") || "1";
+      const tab = (urlSearchParams.get("tab") || "transactions") as "dashboard" | "transactions" | "importlog";
       setPage(Number(sp));
       setSearch(ss);
       setFromDate(sfd);
@@ -385,29 +402,6 @@ function IncomeOPPageContent() {
       setActiveTab(tab);
       setHasSearched(true);
       fetchTxns(Number(sp), ss, sfd, std, spf, sdf, ssf);
-      return;
-    }
-    if (tab !== "transactions") {
-      setActiveTab(tab);
-    }
-    const saved = sessionStorage.getItem("opFilterState");
-    if (saved) {
-      sessionStorage.removeItem("opFilterState");
-      try {
-        const { page: sp, search: ss, fromDate: sfd, toDate: std, txnPaymentFilter: spf, txnDoctorFilter: sdf, txnStatusFilter: ssf } = JSON.parse(saved);
-        setPage(sp || 1);
-        setSearch(ss || "");
-        setFromDate(sfd || "");
-        setToDate(std || "");
-        setTxnPaymentFilter(spf || "");
-        setTxnDoctorFilter(sdf || "");
-        setTxnStatusFilter(ssf || "");
-        setActiveTab("transactions");
-        if (ss || sfd || std || spf || sdf || ssf) {
-          setHasSearched(true);
-          fetchTxns(sp || 1, ss || "", sfd || "", std || "", spf || "", sdf || "", ssf || "");
-        }
-      } catch {}
     }
   }, [urlSearchParams]);
 

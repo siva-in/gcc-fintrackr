@@ -232,6 +232,7 @@ enum PartyType {
   RADIOLOGY
   GOVERNMENT
   OTHER
+  REFERRAL
 
   @@map("party_type_enum")
 }
@@ -297,6 +298,7 @@ model IncomeTxn {
   pymt_status    IncomeStatus @map("status")
   txn_status     TxnStatus    @default(UNVERIFIED)
   errorReason    String?      @db.Text
+  remarks        String?      @db.Text
   realisedTxnId  Int?         @map("realised_txn_id")
   createdAt      DateTime     @default(now())
 

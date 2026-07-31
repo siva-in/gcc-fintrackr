@@ -646,7 +646,7 @@ const updateIPTxnError = async (req, res) => {
 const reviewIPTxn = async (req, res) => {
   try {
     const { id } = req.params;
-    const { rcvdPymts, payables } = req.body;
+    const { rcvdPymts, payables, referrals } = req.body;
 
     const txn = await prisma.incomeTxn.findUnique({ where: { id: parseInt(id) } });
     if (!txn) return res.status(404).json({ message: "Transaction not found" });
@@ -820,6 +820,37 @@ const reviewIPTxn = async (req, res) => {
           id: { notIn: keptPayableIds.length > 0 ? keptPayableIds : [0] },
         },
       });
+    }
+
+    // Create referral payables (Referral Type: Doctor or BizPartner)
+    if (referrals && Array.isArray(referrals)) {
+      for (const ref of referrals) {
+        const amt = parseFloat(ref.referralAmt) || 0;
+        if (amt <= 0) continue;
+        const isDoctor = ref.referralType === "DOCTOR";
+        const isBizPartner = ref.referralType === "BIZPARTNER";
+        if (!isDoctor && !isBizPartner) continue;
+        const refId = ref.referralId ? parseInt(ref.referralId) : null;
+        if (!refId) continue;
+
+        const name = ref.referralName || (isDoctor ? "Doctor" : "Biz Partner");
+        await prisma.payable.create({
+          data: {
+            partyType: "REFERRAL",
+            incomeTxn: { connect: { id: parseInt(id) } },
+            billDate: txn.billDate || new Date(),
+            dueDate: txn.billDate ? new Date(`${addDays(txn.billDate.toISOString().split("T")[0], 15)}T00:00:00.000Z`) : null,
+            billedAmt: amt,
+            payableAmt: amt,
+            balanceAmt: amt,
+            status: "PENDING",
+            remarks: `Referral fee - ${name}`,
+            createdBy: req.user?.username || null,
+            doctor: isDoctor ? { connect: { id: refId } } : undefined,
+            bizPartner: isBizPartner ? { connect: { id: refId } } : undefined,
+          },
+        });
+      }
     }
 
     await prisma.incomeTxn.update({
@@ -1020,8 +1051,23 @@ const getIPInsurancePartners = async (req, res) => {
   }
 };
 
+const getIPReferralPartners = async (req, res) => {
+  try {
+    const partners = await prisma.bizPartner.findMany({
+      where: { bpType: "REFERRAL", isActive: true },
+      orderBy: { bpName: "asc" },
+      select: { id: true, bpName: true, contactName: true, mobile: true },
+    });
+    res.json(partners);
+  } catch (error) {
+    console.error("GetIPReferralPartners error:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
 module.exports = {
   importIPBilling, importIPDetailReport, getIPDashboard, getIPTxns, getIPTxnDetail,
   updateIPTxnError, reviewIPTxn, getIPDoctorSummary, getIPDoctorPayables,
   recordIPPayablePayment, getIPImportLogs, getIPImportErrors, getIPPaymentModes, getIPInsurancePartners,
+  getIPReferralPartners,
 };

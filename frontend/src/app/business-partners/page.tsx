@@ -223,6 +223,7 @@ export default function BusinessPartnersPage() {
                 <option value="LAB">Lab</option>
                 <option value="RADIOLOGY">Radiology</option>
                 <option value="GOVERNMENT">Government</option>
+                <option value="REFERRAL">Referral</option>
                 <option value="OTHER">Other</option>
               </select>
             </div>

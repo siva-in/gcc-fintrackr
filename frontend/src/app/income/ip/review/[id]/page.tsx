@@ -94,9 +94,15 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
   const [vendorsList, setVendorsList] = useState<{ id: number; bpName: string }[]>([]);
   const [paymentModes, setPaymentModes] = useState<{ id: number; code: string; name: string }[]>([]);
   const [insurancePartners, setInsurancePartners] = useState<{ id: number; bpName: string }[]>([]);
+  const [referralPartners, setReferralPartners] = useState<{ id: number; bpName: string }[]>([]);
+  const [referralType, setReferralType] = useState<"BIZPARTNER" | "DOCTOR">("BIZPARTNER");
+  const [referralId, setReferralId] = useState("");
+  const [referralName, setReferralName] = useState("");
+  const [referralAmt, setReferralAmt] = useState("");
   const [ipFilterConfigs, setIpFilterConfigs] = useState<{ code: string; value: string }[]>([]);
   const doctorSuggestionsId = "ip-review-doctor-suggestions";
   const insuranceSuggestionsId = "ip-review-insurance-suggestions";
+  const referralSuggestionsId = "ip-review-referral-suggestions";
 
   const normalizeName = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
   const stripDrPrefix = (value: string) => value.replace(/^dr[.\s:-]*/i, "").trim();
@@ -273,6 +279,7 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
 
         const savedPayables = (data.payables || []) as {
           id: number;
+          partyType: string;
           billedAmt: number;
           payableAmt: number | null;
           doctor: { id: number; name: string } | null;
@@ -282,6 +289,20 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
         const isPreferredRow = (item: PayableItem) => {
           return !!matchIpFilter(item.description, filterConfigs) || /^DR[.\s:-]/i.test(item.description);
         };
+
+        const referralPayable = savedPayables.find((p) => p.partyType === "REFERRAL");
+        if (referralPayable) {
+          if (referralPayable.doctor?.id) {
+            setReferralType("DOCTOR");
+            setReferralId(String(referralPayable.doctor.id));
+            setReferralName(referralPayable.doctor.name);
+          } else if (referralPayable.bizPartner?.id) {
+            setReferralType("BIZPARTNER");
+            setReferralId(String(referralPayable.bizPartner.id));
+            setReferralName(referralPayable.bizPartner.bpName);
+          }
+          setReferralAmt(referralPayable.payableAmt != null ? String(referralPayable.payableAmt) : "");
+        }
 
         const findRowIndexForPayable = (payable: { billedAmt: number }) => {
           const billed = Number(payable.billedAmt || 0);
@@ -294,6 +315,7 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
         };
 
         for (const payable of savedPayables) {
+          if (payable.partyType === "REFERRAL") continue;
           const idx = findRowIndexForPayable(payable);
           if (idx < 0) continue;
           usedIndexes.add(idx);
@@ -368,6 +390,15 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
     }
   }
 
+  async function fetchReferralPartners() {
+    try {
+      const { data } = await api.get("/income/ip/referral-partners");
+      setReferralPartners(data || []);
+    } catch {
+      /* ignore */
+    }
+  }
+
   async function fetchIpFilterConfigs() {
     try {
       const { data } = await api.get("/config/category/IP_FILTER");
@@ -384,7 +415,7 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
       const doctors = await fetchDoctorsList();
       const configs = await fetchIpFilterConfigs();
       await fetchVendorsList();
-      await Promise.all([fetchPaymentModes(), fetchInsurancePartners()]);
+      await Promise.all([fetchPaymentModes(), fetchInsurancePartners(), fetchReferralPartners()]);
       await fetchTxnDetails(doctors, configs);
     };
     init();
@@ -482,6 +513,17 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
     setPymts(updated);
   };
 
+  const updateReferralByName = (inputName: string) => {
+    setReferralName(inputName);
+    if (referralType === "BIZPARTNER") {
+      const selected = referralPartners.find((p) => p.bpName.toLowerCase() === inputName.trim().toLowerCase());
+      setReferralId(selected ? String(selected.id) : "");
+    } else {
+      const selected = doctorsList.find((d) => d.name.toLowerCase() === inputName.trim().toLowerCase());
+      setReferralId(selected ? String(selected.id) : "");
+    }
+  };
+
   const handleSubmit = async () => {
     if (!txn) return;
 
@@ -493,6 +535,12 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
 
     if (Math.abs(totalPaymentAmt - netAmt) > 0.01) {
       return toast.error("Total payments must equal Net Amount");
+    }
+
+    const refAmt = parseFloat(referralAmt) || 0;
+    const refMax = ((Number(txn.grossAmount) || 0) - (Number(txn.discountAmount) || 0)) * 0.1;
+    if (refAmt > 0 && refAmt >= refMax) {
+      return toast.error("Referral amount must be less than 10% of Net Amount");
     }
 
     setSaving(true);
@@ -520,7 +568,16 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
           isOptional: item.isOptional,
         }));
 
-      await api.post(`/income/ip/txns/${txn.id}/review`, { rcvdPymts, payables });
+      const referrals = referralAmt && parseFloat(referralAmt) > 0 && referralId
+        ? [{
+            referralType,
+            referralId,
+            referralName,
+            referralAmt,
+          }]
+        : [];
+
+      await api.post(`/income/ip/txns/${txn.id}/review`, { rcvdPymts, payables, referrals });
       toast.success("Review saved successfully");
       router.push(buildBackUrl());
     } catch (err: unknown) {
@@ -696,9 +753,10 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
             </div>
           </div>
 
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
           <div className="bg-white rounded-2xl border border-slate-200/60 p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-slate-700">Payments (Received)</h2>
+              <h2 className="text-lg font-semibold text-slate-700">Payments (Cash, UPI, Insurance, Credit etc.,)</h2>
               <button
                 onClick={addPaymentRow}
                 className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
@@ -784,10 +842,70 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
             </div>
           </div>
 
+          <div className="bg-white rounded-2xl border border-slate-200/60 p-6">
+            <h2 className="text-lg font-semibold text-slate-700 mb-4">Referral Fee</h2>
+            <div className="flex gap-3 items-end p-3 bg-slate-50 rounded-xl">
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-slate-500 mb-1">Referral Type</label>
+                <select
+                  value={referralType}
+                  onChange={(e) => {
+                    const t = e.target.value as "BIZPARTNER" | "DOCTOR";
+                    setReferralType(t);
+                    setReferralId("");
+                    setReferralName("");
+                  }}
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                >
+                  <option value="BIZPARTNER">Biz Partner</option>
+                  <option value="DOCTOR">Doctor</option>
+                </select>
+              </div>
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-slate-500 mb-1">
+                  {referralType === "BIZPARTNER" ? "Referral (Biz Partner)" : "Referral (Doctor)"}
+                </label>
+                <input
+                  type="text"
+                  list={referralSuggestionsId}
+                  value={referralName}
+                  onChange={(e) => updateReferralByName(e.target.value)}
+                  placeholder={referralType === "BIZPARTNER" ? "Type referral partner..." : "Type referral doctor..."}
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                />
+                {!referralId && referralName.trim() && (
+                  <p className="text-[10px] text-amber-600 mt-1">Select from suggestions</p>
+                )}
+              </div>
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-slate-500 mb-1">Referral Fee Amount</label>
+                <input
+                  type="number"
+                  value={referralAmt}
+                  onChange={(e) => setReferralAmt(e.target.value)}
+                  placeholder={`Max: ${Math.floor(((Number(txn?.grossAmount) || 0) - (Number(txn?.discountAmount) || 0)) * 0.1)}`}
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                />
+                {(() => {
+                  const refAmt = parseFloat(referralAmt) || 0;
+                  const maxRef = ((Number(txn?.grossAmount) || 0) - (Number(txn?.discountAmount) || 0)) * 0.1;
+                  if (!refAmt || refAmt <= 0 || !maxRef) return null;
+                  if (refAmt >= maxRef) {
+                    return (
+                      <p className="text-[10px] text-red-500 mt-1">Must be less than 10% of Net Amount (max ₹{Math.floor(maxRef)})</p>
+                    );
+                  }
+                  return <p className="text-[10px] text-slate-400 mt-1">Max allowed: ₹{Math.floor(maxRef)}</p>;
+                })()}
+              </div>
+            </div>
+          </div>
+          </div>
+
           {payableItems.length > 0 && (
             <div className="bg-white rounded-2xl border border-slate-200/60 p-6">
               <div className="flex items-center justify-between gap-3 mb-2">
-                <h2 className="text-lg font-semibold text-slate-700">Payable Items (from Detail Report)</h2>
+                <h2 className="text-lg font-semibold text-slate-700">Payable (Dr, Surgeon, Consultant, Vendor etc.,)</h2>
                 {payableItems.some((item) => !isDefaultVisiblePayableDescription(item.description)) && (
                   <button
                     type="button"
@@ -961,6 +1079,15 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
                 {insurancePartners.map((p) => (
                   <option key={p.id} value={p.bpName} />
                 ))}
+              </datalist>
+              <datalist id={referralSuggestionsId}>
+                {referralType === "BIZPARTNER"
+                  ? referralPartners.map((p) => (
+                      <option key={p.id} value={p.bpName} />
+                    ))
+                  : doctorsList.map((d) => (
+                      <option key={d.id} value={d.name} />
+                    ))}
               </datalist>
             </div>
           )}

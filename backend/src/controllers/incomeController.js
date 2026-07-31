@@ -886,7 +886,7 @@ const getIncomeTxnDetail = async (req, res) => {
         patient: true,
         incomeSource: true,
         rcvdPymts: { include: { paymentMode: true } },
-        receivables: true,
+        receivables: { include: { bizPartner: true } },
         payables: { include: { doctor: true } },
       },
     });
@@ -929,7 +929,7 @@ const updateIncomeTxnFull = async (req, res) => {
   try {
     const { id } = req.params;
     const txnId = parseInt(id);
-    const { grossAmount, discountAmount, netAmount, errorReason, payables, payments } = req.body;
+    const { grossAmount, discountAmount, netAmount, errorReason, remarks, payables, payments } = req.body;
 
     const txn = await prisma.incomeTxn.findUnique({
       where: { id: txnId },
@@ -947,9 +947,12 @@ const updateIncomeTxnFull = async (req, res) => {
     data.advAdjt = 0;
     data.netAmount = net;
     data.errorReason = errorReason || null;
+    data.remarks = remarks || null;
 
     const creditMode = await prisma.paymentMode.findFirst({ where: { code: "CREDIT" } });
     const creditModeId = creditMode?.id;
+    const insuranceMode = await prisma.paymentMode.findFirst({ where: { code: "INSURANCE" } });
+    const insuranceModeId = insuranceMode?.id;
 
     // Delete existing records before recreating
     await prisma.rcvdPymt.deleteMany({ where: { incomeTxnId: txnId } });
@@ -977,6 +980,22 @@ const updateIncomeTxnFull = async (req, res) => {
               dueAmt: pmtAmount,
               balanceAmt: pmtAmount,
               status: "PENDING",
+            },
+          });
+        } else if (insuranceModeId && pmtModeId === insuranceModeId) {
+          const dueDate = pmt.dueDate ? new Date(pmt.dueDate) : null;
+          await prisma.receivable.create({
+            data: {
+              arType: "INSURANCE",
+              bpId: pmt.insurancePartnerId ? parseInt(pmt.insurancePartnerId) : null,
+              patId: txn.patientId,
+              incomeTxnId: txnId,
+              billDate: txn.billDate || new Date(),
+              dueDate,
+              dueAmt: pmtAmount,
+              balanceAmt: pmtAmount,
+              status: "PENDING",
+              remarks: "Insurance receivable",
             },
           });
         } else {
@@ -1038,7 +1057,7 @@ const updateIncomeTxnFull = async (req, res) => {
         patient: true,
         incomeSource: true,
         rcvdPymts: { include: { paymentMode: true } },
-        receivables: true,
+        receivables: { include: { bizPartner: true } },
         payables: { include: { doctor: true } },
       },
     });
@@ -1158,4 +1177,18 @@ const bulkVerifyTxns = async (req, res) => {
   }
 };
 
-module.exports = { importOPBilling, importOPDetailReport, getImportLogs, getImportErrors, getDashboard, getIncomeTxns, getPayables, getDoctorPayableSummary, getIncomeTxnDetail, updateIncomeTxnError, updateIncomeTxnFull, getDoctorPayables, recordPayablePayment, getPaymentModes, bulkVerifyTxns };
+const getInsurancePartners = async (req, res) => {
+  try {
+    const partners = await prisma.bizPartner.findMany({
+      where: { bpType: "INSURANCE", isActive: true },
+      orderBy: { bpName: "asc" },
+      select: { id: true, bpName: true, contactName: true, mobile: true },
+    });
+    res.json(partners);
+  } catch (error) {
+    console.error("GetInsurancePartners error:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+module.exports = { importOPBilling, importOPDetailReport, getImportLogs, getImportErrors, getDashboard, getIncomeTxns, getPayables, getDoctorPayableSummary, getIncomeTxnDetail, updateIncomeTxnError, updateIncomeTxnFull, getDoctorPayables, recordPayablePayment, getPaymentModes, bulkVerifyTxns, getInsurancePartners };

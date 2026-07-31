@@ -5,6 +5,7 @@ const {
   importIPBilling, importIPDetailReport, getIPDashboard, getIPTxns, getIPTxnDetail,
   updateIPTxnError, reviewIPTxn, getIPDoctorSummary, getIPDoctorPayables,
   recordIPPayablePayment, getIPImportLogs, getIPImportErrors, getIPPaymentModes, getIPInsurancePartners,
+  getIPReferralPartners,
 } = require("../controllers/incomeIpController");
 const { authenticate, requireCompanyRole } = require("../middleware/auth");
 
@@ -22,6 +23,7 @@ router.get("/doctor-payables", getIPDoctorPayables);
 router.post("/payable-pymts", recordIPPayablePayment);
 router.get("/payment-modes", getIPPaymentModes);
 router.get("/insurance-partners", getIPInsurancePartners);
+router.get("/referral-partners", getIPReferralPartners);
 router.get("/import-logs", getIPImportLogs);
 router.get("/import-logs/:id/errors", getIPImportErrors);
 router.post("/import", upload.single("file"), importIPBilling);
