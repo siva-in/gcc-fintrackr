@@ -339,6 +339,9 @@ const importIPDetailReport = async (req, res) => {
       data: { fileName: req.file.originalname, fileType: "IP_DETAIL", totalRecords: 0, inserted: 0, updated: 0, skipped: 0, failed: 0, createdBy: req.user?.id || null },
     });
 
+    const ipSource = await prisma.incomeSource.findFirst({ where: { code: "IP" } });
+    if (!ipSource) return res.status(500).json({ message: "IP income source not found" });
+
     const errors = [];
     let inserted = 0, skipped = 0, failed = 0, totalRecords = 0;
 
