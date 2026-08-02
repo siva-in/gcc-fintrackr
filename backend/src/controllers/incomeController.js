@@ -205,14 +205,14 @@ const importOPBilling = async (req, res) => {
         }
 
         const billDate = parseDate(row[headerIdx["Date"]]);
-        const netAmount = parseDecimal(row[headerIdx["Net Amount"]]) || 0;
+        const billAmt = parseDecimal(row[headerIdx["Net Amount"]]) || 0;
         const cashAmt = parseDecimal(row[headerIdx["Cash_Amt"]]) || 0;
         const bankAmt = parseDecimal(row[headerIdx["Bank Amt"]]) || 0;
         const creditAmt = parseDecimal(row[headerIdx["Credit Amt"]]) || 0;
 
         const paidAmt = cashAmt + bankAmt;
         const unpaid = creditAmt;
-        const net = netAmount;
+        const net = billAmt;
         const txnStatusBase = bankAmt > 0 ? "REVIEW_REQ" : "UNVERIFIED";
 
         let pymtStatus, txnStatus;
@@ -240,8 +240,8 @@ const importOPBilling = async (req, res) => {
             data: withIncomeTxnStatusData({
               patientId,
               billDate: toDateOnly(billDate),
-              grossAmount: netAmount,
-              netAmount,
+              grossAmount: billAmt,
+              billAmt,
               errorReason: txnStatus === "ERROR" ? "Payment mismatch" : null,
             }, pymtStatus, txnStatus),
           });
@@ -255,11 +255,10 @@ const importOPBilling = async (req, res) => {
               patientId,
               billNo,
               billDate: toDateOnly(billDate),
-              ipNo: null,
-              grossAmount: netAmount,
+              grossAmount: billAmt,
               discountAmount: 0,
               advAdjt: 0,
-              netAmount,
+              billAmt,
             }, pymtStatus, txnStatus),
           });
           inserted++;
@@ -443,7 +442,7 @@ const importOPDetailReport = async (req, res) => {
         }
 
         if (!billDetailTotals[billNo]) {
-          billDetailTotals[billNo] = { txnId: incomeTxn.id, netAmount: parseFloat(String(incomeTxn.netAmount)) || 0, total: 0 };
+          billDetailTotals[billNo] = { txnId: incomeTxn.id, billAmt: parseFloat(String(incomeTxn.billAmt)) || 0, total: 0 };
         }
         billDetailTotals[billNo].total += amount;
 
@@ -524,8 +523,8 @@ const importOPDetailReport = async (req, res) => {
 
     for (const billNo of Object.keys(billDetailTotals)) {
       const info = billDetailTotals[billNo];
-      if (info.total > info.netAmount + 0.01) {
-        const errorReason = `Amount discrepancy: Detail total (${info.total}) > Bill net amount (${info.netAmount})`;
+      if (info.total > info.billAmt + 0.01) {
+        const errorReason = `Amount discrepancy: Detail total (${info.total}) > Bill net amount (${info.billAmt})`;
         await prisma.incomeTxn.update({
           where: { id: info.txnId },
           data: withIncomeTxnStatusData({ errorReason }, undefined, "ERROR"),
@@ -901,7 +900,7 @@ const getIncomeTxnDetail = async (req, res) => {
 const updateIncomeTxnError = async (req, res) => {
   try {
     const { id } = req.params;
-    const { pymt_status, txn_status, errorReason, grossAmount, discountAmount, advAdjt, netAmount } = req.body;
+    const { pymt_status, txn_status, errorReason, grossAmount, discountAmount, advAdjt, billAmt } = req.body;
 
     const txn = await prisma.incomeTxn.findUnique({ where: { id: parseInt(id) } });
     if (!txn) return res.status(404).json({ message: "Transaction not found" });
@@ -915,7 +914,7 @@ const updateIncomeTxnError = async (req, res) => {
     if (grossAmount !== undefined) data.grossAmount = parseFloat(grossAmount) || 0;
     if (discountAmount !== undefined) data.discountAmount = parseFloat(discountAmount) || 0;
     if (advAdjt !== undefined) data.advAdjt = parseFloat(advAdjt) || 0;
-    if (netAmount !== undefined) data.netAmount = parseFloat(netAmount) || 0;
+    if (billAmt !== undefined) data.billAmt = parseFloat(billAmt) || 0;
 
     const updated = await prisma.incomeTxn.update({ where: { id: parseInt(id) }, data });
     res.json(updated);
@@ -929,7 +928,7 @@ const updateIncomeTxnFull = async (req, res) => {
   try {
     const { id } = req.params;
     const txnId = parseInt(id);
-    const { grossAmount, discountAmount, netAmount, errorReason, remarks, payables, payments } = req.body;
+    const { grossAmount, discountAmount, billAmt, errorReason, remarks, payables, payments } = req.body;
 
     const txn = await prisma.incomeTxn.findUnique({
       where: { id: txnId },
@@ -939,13 +938,13 @@ const updateIncomeTxnFull = async (req, res) => {
 
     const gross = parseFloat(grossAmount) || 0;
     const discount = parseFloat(discountAmount) || 0;
-    const net = parseFloat(netAmount) || 0;
+    const net = parseFloat(billAmt) || 0;
 
     const data = {};
     data.grossAmount = gross;
     data.discountAmount = discount;
     data.advAdjt = 0;
-    data.netAmount = net;
+    data.billAmt = net;
     data.errorReason = errorReason || null;
     data.remarks = remarks || null;
 

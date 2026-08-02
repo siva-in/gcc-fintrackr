@@ -248,6 +248,14 @@ enum ConfigCategory {
   IP_FILTER
 }
 
+enum IPStatus {
+  ADMITTED
+  DISCHARGED
+  CANCELLED
+
+  @@map("ip_status_enum")
+}
+
 model ConfigMaster {
   id       Int            @id @default(autoincrement())
   category ConfigCategory
@@ -290,11 +298,12 @@ model IncomeTxn {
   patientId      Int?
   billNo         String       @unique @db.VarChar(50)
   billDate       DateTime?    @db.Date
-  ipNo           String?      @db.VarChar(50)
+  ipId           Int?         @map("ip_id")
   grossAmount    Decimal?     @db.Decimal(12, 2)
   discountAmount Decimal?     @db.Decimal(12, 2)
   advAdjt        Decimal?     @db.Decimal(12, 2)
-  netAmount      Decimal?     @db.Decimal(12, 2)
+  billAmt        Decimal?     @map("bill_amt") @db.Decimal(12, 2)
+  tax            Decimal?     @db.Decimal(12, 2)
   pymt_status    IncomeStatus @map("status")
   txn_status     TxnStatus    @default(UNVERIFIED)
   errorReason    String?      @db.Text
@@ -304,6 +313,7 @@ model IncomeTxn {
 
   incomeSource  IncomeSource @relation(fields: [incomeSourceId], references: [id])
   patient       Patient?     @relation(fields: [patientId], references: [id])
+  ipAdm         IPAdm?       @relation(fields: [ipId], references: [id])
   rcvdPymts     RcvdPymt[]
   payables      Payable[]
   incomeDtls    IncomeDtl[]
@@ -466,17 +476,19 @@ model RcvlPymt {
 }
 
 model IPAdm {
-  id          Int      @id @default(autoincrement())
-  patientId   Int?
-  ipNo        String   @db.VarChar(50)
-  incomeTxnId Int?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        Int      @id @default(autoincrement())
+  ipNo      String   @unique @db.VarChar(50)
+  date      DateTime @db.Date
+  patId     Int
+  status    IPStatus
+  dischargeDt DateTime? @map("discharge_dt") @db.Date
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  patient   Patient?   @relation(fields: [patientId], references: [id])
+  patient    Patient?    @relation(fields: [patId], references: [id])
+  incomeTxns IncomeTxn[]
 
-  @@unique([ipNo, incomeTxnId])
-  @@index([patientId])
+  @@index([patId])
   @@map("ip_adm")
 }
 

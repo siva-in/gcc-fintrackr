@@ -62,8 +62,7 @@ FinTrackr/
 │       └── utils/
 │           ├── helpers.js             # hashPassword, comparePassword, generateToken
 │           ├── excel.js               # readFirstSheetRowsFromBuffer, rowsToObjects
-│           ├── seed.js                # DB seeder (admin, roles, configs, partners)
-│           └── seedDoctors.js         # Doctor seeder from Excel
+│           └── seed.js                # DB seeder (admin, roles, configs, partners, doctors)
 ├── frontend/
 │   ├── package.json
 │   ├── .env                           # NEXT_PUBLIC_API_URL
@@ -449,3 +448,8 @@ When proposing a schema change, the agent **must** advise whether the user needs
 - Always prefer using existing shared components in `frontend/src/components/ui/` over creating inline implementations.
 - The `Pagination` component is the single source of truth for all pagination needs — use it everywhere instead of duplicating pagination HTML/logic.
 - Before creating new UI patterns, check if a component already exists in the shared components directory.
+
+## 14. Temp Files & Project Scope
+
+- **Never create or use files/folders outside the project folder** (e.g., `/tmp`, system temp dirs). If temporary files are needed, create them inside the project as `.tmp/` (e.g., `.tmp/doctors.csv`) and remove them when done.
+- All work — reads, writes, scripts, and artifacts — must stay within the project directory.

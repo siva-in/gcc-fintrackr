@@ -46,6 +46,83 @@ const INSURANCE_BIZ_PARTNERS = [
 
 const VENDOR_BIZ_PARTNERS = [{ bpName: "Siva Neuro Diagnostics", mobile: "8883069610" }];
 
+const DOCTORS_CSV = `Name,Degree,Name_Descr
+"DR. RAMANATHAN","MBBS.,DA.,MD(INTENSIVIST)","DR. RAMANATHAN MBBS.,DA.,MD(INTENSIVIST)"
+"DR. POONGUZHALI","MBBS.,MS(O&G)","DR. POONGUZHALI MBBS.,MS(O&G)"
+"DR. SIVAKUMAR","MBBS.,MS(ORTHO)","DR. SIVAKUMAR MBBS.,MS(ORTHO)"
+"DR. GOWRI","MBBS.,MD","DR. GOWRI MBBS.,MD"
+"DR. SAKTHI KUMAR","MBBS.,MD","DR. SAKTHI KUMAR MBBS.,MD"
+"DR. RAMUGUNASEKAR","MBBS.,DM(Cardiologist)","DR. RAMUGUNASEKAR MBBS.,DM(Cardiologist)"
+"DR. GOWTHAM","MBBS.,(Neuro)","DR. GOWTHAM MBBS.,(Neuro)"
+"DR. POORNALINGAM","MBBS.,MS (ORTHO)","DR. POORNALINGAM MBBS.,MS (ORTHO)"
+"DR. BALAMURUGAN","MBBS.,MS.,Mch (Neurosurgeon)","Dr. BALAMURUGAN MBBS.,MS.,Mch (Neurosurgeon)"
+"DR. SUKUMAR","MBBS.,MGE","DR. SUKUMAR MBBS.,MGE"
+"DR. PRIYA","MBBS.,MS(OPHTHALMOLOGIST)","DR. PRIYA MBBS.,MS(OPHTHALMOLOGIST)"
+"DR. KAVERI","MBBS.,MS(Neuro)","DR. KAVERI MBBS.,MS(Neuro)"
+"DR. SADHANA","MBBS.,MS (GENERAL SURGEON)","DR. SADHANA MBBS.,MS (GENERAL SURGEON)"
+"DR. SUGUMARAN","MBBS.,MGE","DR. SUGUMARAN MBBS.,MGE"
+"DR. SRIVIDHYA","MBBS.,MD(PSYCHIATRIST)","DR. SRIVIDHYA MBBS.,MD(PSYCHIATRIST)"
+"DR. RAM MOHAN","MBBS.,MS(OMFS)","DR. RAM MOHAN MBBS.,MS(OMFS)"
+"DR. CHANDRA SEKAR","MBBS.,MS(ENT)","DR. CHANDRA SEKAR MBBS.,MS(ENT)"
+"DR. S. GOPIKUMAR","MBBS.,DCH.,MD.,DM.,DrNB (Nephrology)","DR. S. GOPIKUMAR MBBS.,DCH.,MD.,DM.,DrNB (Nephrology)"
+"DR. PRAKASH","MBBS.,MS (GEN SURGEON)","DR. PRAKASH MBBS.,MS (GEN SURGEON)"
+"DR. VEERAMANI","MBBS.,MD.,MD.,DM (CARDIOLOGIST)","DR. VEERAMANI MBBS.,MD.,MD.,DM (CARDIOLOGIST)"
+"DR. BALAMURUGAN","MBBS.,MD(Neuro Physician)","DR. BALAMURUGAN MBBS.,MD(Neuro Physician)"
+"DR. SATHYA","MBBS.,MD(Pediatrician)","DR. SATHYA MBBS.,MD(Pediatrician)"
+"DR. NANDHA KUMAR","BDS(Dental)","DR. NANDHA KUMAR BDS(Dental)"
+"DR. GANESAN","MBBS.,MS(GEN SURGEON)","DR. GANESAN MBBS.,MS(GEN SURGEON)"
+"DR. SRINIVASAN","MBBS.,MS.,Mch","DR. SRINIVASAN MBBS.,MS.,Mch"
+"DR.VINOTH","MBBS.,MD.,DM(Rheumatology)","DR.VINOTH.,MBBS.,MD.,DM(Rheumatology)"
+"DR. VELMURUGAN","MBBS.,MD(Pedia)","DR. VELMURUGAN MBBS.,MD(Pedia)"
+"DR. KALAIYARASAN","MBBS.,MS (General Surgeon)","DR. KALAIYARASAN MBBS.,MS (General Surgeon)"
+"DR. KRISHNA KUMAR","MBBS.,MS(ORTHO)","DR. KRISHNA KUMAR"
+"DR. SOWMIYA","MBBS.,MD(Pediatrician)","DR. SOWMIYA MBBS.,MD(Pediatrician)"
+"DR. VELMURUGAN","MBBS.,MD.,DM (MGE)","DR. VELMURUGAN MBBS.,MD.,DM (MGE)"
+"DR. KANYA","MBBS.,MD(IHBT)","DR. KANYA MBBS.,MD(IHBT)"
+"DR. JAYAPRAKASH","MBBS.,MS.,Mch (Urologist)","DR. JAYAPRAKASH MBBS.,MS.,Mch (Urologist)"
+"DR. PRITHIV RAJ","MBBS.,MS(PLASTIC SURGEON)","DR. PRITHIV RAJ MBBS.,MS(PLASTIC SURGEON)"
+"DR. ARUN","MBBS.,MD (PULMONOLOGIST)","DR. ARUN MBBS.,MD (PULMONOLOGIST)"
+"DR. RAJAMANI","MBBS.,MS(O&G)","DR. RAJAMANI MBBS.,MS(O&G)"
+"DR. GEETHA","MBBS.,MD(OPHTHALMOLOGIST)","DR. GEETHA MBBS.,MD(OPHTHALMOLOGIST)"
+"DR. VINOJ","MBBS.,DM(Nephro)","DR. VINOJ MBBS.,DM(Nephro)"
+"DR. SIVA SUBRAMANIYAM","MBBS.,MD(DERMATOLOGIST)","DR. SIVA SUBRAMANIYAM.,MBBS.,MD(DERMATOLOGIST)"
+"Dr. MOHAN RAJ","MBBS.,MD (Pediatrics)","Dr. MOHAN RAJ MBBS.,MD (Pediatrics)"
+"DR. NANDHINI","MBBS.,MD (PEDIATRICIAN)","DR. NANDHINI MBBS.,MD (PEDIATRICIAN)"
+"DR. THIRUMANIKANDAN","MBBS.,MS.,DrNB (SURGICAL ONCOLOGIST)","DR. THIRUMANIKANDAN MBBS.,MS.,DrNB (SURGICAL ONCOLOGIST)"`;
+
+const parseCsv = (csv) => {
+  const rows = [];
+  const lines = csv.trim().split("\n");
+  for (const line of lines) {
+    const cells = [];
+    let cur = "";
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (inQuotes) {
+        if (ch === '"' && line[i + 1] === '"') {
+          cur += '"';
+          i++;
+        } else if (ch === '"') {
+          inQuotes = false;
+        } else {
+          cur += ch;
+        }
+      } else if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === ",") {
+        cells.push(cur);
+        cur = "";
+      } else {
+        cur += ch;
+      }
+    }
+    cells.push(cur);
+    rows.push(cells);
+  }
+  return rows;
+};
+
 const IP_FILTER_CONFIGS = [
   { code: "DR.", value: "DOCTOR" },
   { code: "SURGEON FEE", value: "DOCTOR" },
@@ -148,6 +225,40 @@ async function seedConfigMaster(runner) {
   }
 }
 
+async function seedDoctors(runner) {
+  const rows = parseCsv(DOCTORS_CSV);
+  const [header, ...dataRows] = rows;
+  const nameIdx = header.findIndex((h) => h.trim().toLowerCase() === "name");
+  const degreeIdx = header.findIndex((h) => h.trim().toLowerCase() === "degree");
+  const descIdx = header.findIndex((h) => h.trim().toLowerCase() === "name_descr");
+
+  let created = 0;
+  let skipped = 0;
+
+  for (const row of dataRows) {
+    if (!row[nameIdx] || !row[degreeIdx] || !row[descIdx]) {
+      skipped++;
+      continue;
+    }
+    const name = row[nameIdx].trim();
+    const degree = row[degreeIdx].trim();
+    const descName = row[descIdx].trim();
+
+    const existing = await runner.doctor.findFirst({ where: { name, degree } });
+    if (existing) {
+      skipped++;
+      continue;
+    }
+
+    await runner.doctor.create({
+      data: { name, degree, descName, isActive: true },
+    });
+    created++;
+  }
+
+  console.log(`Doctors seeded: ${created} created, ${skipped} skipped`);
+}
+
 async function main() {
   const name = "siva";
   const existingAdmin = await prisma.user.findUnique({
@@ -194,6 +305,7 @@ async function main() {
   await seedInsuranceBizPartners(prisma);
   await seedVendorBizPartners(prisma);
   await seedConfigMaster(prisma);
+  await seedDoctors(prisma);
 }
 
 main()

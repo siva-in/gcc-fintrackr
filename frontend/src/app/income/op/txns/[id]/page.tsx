@@ -286,7 +286,7 @@ function EditTransactionPageContent() {
       const payload: Record<string, unknown> = {
         grossAmount: String(g),
         discountAmount: String(d),
-        netAmount: String(n),
+        billAmt: String(n),
         errorReason: errorReason || null,
         remarks: remarks || null,
         payables: payables.map((p) => ({

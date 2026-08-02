@@ -21,7 +21,7 @@ interface IncomeTxn {
   id: number;
   billNo: string;
   billDate: string | null;
-  netAmount: number | null;
+  billAmt: number | null;
   pymt_status: string;
   txn_status: string;
   errorReason: string | null;
@@ -344,7 +344,7 @@ export default function IncomeLabPage() {
     if (valid.length === 0) return toast.error("Add at least one payment with amount");
 
     const totalAmt = valid.reduce((sum, e) => sum + parseFloat(e.amount), 0);
-    const net = paymentTxn?.netAmount ? Number(paymentTxn.netAmount) : 0;
+    const net = paymentTxn?.billAmt ? Number(paymentTxn.billAmt) : 0;
     if (Math.abs(totalAmt - net) > 0.01) return toast.error(`Total payments (${totalAmt.toFixed(2)}) must match bill amount (${net.toFixed(2)})`);
 
     setPaymentSaving(true);
@@ -559,7 +559,7 @@ export default function IncomeLabPage() {
       setEditGross(data.grossAmount != null ? String(data.grossAmount) : "");
       setEditDiscount(data.discountAmount != null ? String(data.discountAmount) : "");
       setEditAdjt(data.advAdjt != null ? String(data.advAdjt) : "");
-      setEditNet(data.netAmount != null ? String(data.netAmount) : "");
+      setEditNet(data.billAmt != null ? String(data.billAmt) : "");
     } catch {
       toast.error("Failed to load transaction details");
     } finally {
@@ -582,7 +582,7 @@ export default function IncomeLabPage() {
         grossAmount: editGross || "0",
         discountAmount: editDiscount || "0",
         advAdjt: editAdjt || "0",
-        netAmount: editNet || "0",
+        billAmt: editNet || "0",
       });
       toast.success("Record updated successfully");
       setEditModalOpen(false);
@@ -967,7 +967,7 @@ export default function IncomeLabPage() {
                             <td className={`px-5 py-3.5 hidden sm:table-cell ${isReviewReq ? "text-red-600" : "text-slate-500"}`}>{formatDate(txn.billDate)}</td>
                             <td className={`px-5 py-3.5 ${isReviewReq ? "text-red-600" : "text-slate-700"}`}>{txn.patient?.name || "-"}</td>
                             <td className={`px-5 py-3.5 hidden md:table-cell ${isReviewReq ? "text-red-600" : "text-slate-500"}`}>{txn.patient?.uhid || "-"}</td>
-                            <td className={`px-5 py-3.5 text-right font-medium ${isReviewReq ? "text-red-600" : "text-slate-700"}`}>{txn.netAmount ? formatCurrency(Number(txn.netAmount)) : "-"}</td>
+                            <td className={`px-5 py-3.5 text-right font-medium ${isReviewReq ? "text-red-600" : "text-slate-700"}`}>{txn.billAmt ? formatCurrency(Number(txn.billAmt)) : "-"}</td>
                             <td className="px-5 py-3.5">
                               <div className="flex flex-wrap gap-1">
                                 {txn.rcvdPymts.map((p, i) => (
@@ -1540,7 +1540,7 @@ export default function IncomeLabPage() {
                   <div><span className="text-slate-500">Patient:</span> <span className="font-medium text-slate-700">{paymentTxn.patient?.name || "-"}</span></div>
                   <div><span className="text-slate-500">UHID:</span> <span className="font-medium text-slate-700">{paymentTxn.patient?.uhid || "-"}</span></div>
                   <div><span className="text-slate-500">Bill Date:</span> <span className="font-medium text-slate-700">{formatDate(paymentTxn.billDate)}</span></div>
-                  <div><span className="text-slate-500">Net Amount:</span> <span className="font-medium text-slate-700">{paymentTxn.netAmount ? formatCurrency(Number(paymentTxn.netAmount)) : "-"}</span></div>
+                  <div><span className="text-slate-500">Net Amount:</span> <span className="font-medium text-slate-700">{paymentTxn.billAmt ? formatCurrency(Number(paymentTxn.billAmt)) : "-"}</span></div>
                 </div>
 
                 <div className="space-y-3">

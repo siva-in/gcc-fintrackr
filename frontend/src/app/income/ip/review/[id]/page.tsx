@@ -6,19 +6,20 @@ import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/api";
 import Button from "@/components/ui/Button";
 import toast from "react-hot-toast";
-import { ArrowLeft, Plus, Trash2, CheckCircle } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, CheckCircle, AlertCircle } from "lucide-react";
 
 interface IncomeTxn {
   id: number;
   billNo: string;
   billDate: string | null;
-  netAmount: number | null;
+  billAmt: number | null;
   grossAmount: number | null;
   discountAmount: number | null;
   advAdjt: number | null;
-  ipNo: string | null;
+  ipAdm?: { id: number; ipNo: string; date: string | null; status: string } | null;
   pymt_status: string;
   txn_status: string;
+  errorReason: string | null;
   patient: { id: number; name: string; uhid: string | null; mobileNo: string | null } | null;
   incomeSource: { code: string; name: string } | null;
   rcvdPymts: {
@@ -527,7 +528,7 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
   const handleSubmit = async () => {
     if (!txn) return;
 
-    const netAmt = Number(txn.netAmount);
+    const netAmt = Number(txn.billAmt);
 
     const totalPaymentAmt = pymts
       .filter((p) => p.amount && parseFloat(p.amount) > 0)
@@ -692,7 +693,7 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
             <div className={`p-2 rounded-lg min-w-[130px] ${getPymtBg()}`}>
               <label className={`block text-[11px] font-medium mb-1 ${getPymtLabelColor()}`}>Final Amt</label>
               <p className="text-sm font-bold text-indigo-700">
-                {txn.netAmount ? formatCurrency(Number(txn.netAmount)) : "-"}
+                {txn.billAmt ? formatCurrency(Number(txn.billAmt)) : "-"}
               </p>
             </div>
           </div>
@@ -728,7 +729,7 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">IP No</label>
-                <p className="text-sm font-medium text-slate-700">{txn.ipNo || "-"}</p>
+                <p className="text-sm font-medium text-slate-700">{txn.ipAdm?.ipNo || "-"}</p>
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">Pymt Status</label>
@@ -752,6 +753,16 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
               </div>
             </div>
           </div>
+
+          {txn.txn_status === "ERROR" && txn.errorReason && (
+            <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex items-start gap-3">
+              <AlertCircle size={18} className="text-red-600 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-sm font-semibold text-red-700">Transaction has errors</p>
+                <p className="text-sm text-red-600 mt-1">{txn.errorReason}</p>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
           <div className="bg-white rounded-2xl border border-slate-200/60 p-6">

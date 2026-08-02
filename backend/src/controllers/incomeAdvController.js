@@ -129,6 +129,12 @@ const importAdvBilling = async (req, res) => {
       const rowNum = headerRowIndex + 2 + i;
       const rowData = getRowValuesAsText(row, ADV_HEADERS, headerIdx);
 
+      const voucherType = cleanValue(row[headerIdx["Voucher Type"]]);
+      if (!voucherType || String(voucherType).trim().toLowerCase() !== "advance collection") {
+        skipped++;
+        continue;
+      }
+
       const billNo = cleanValue(row[headerIdx["Vou.No"]]);
       if (!billNo) {
         failed++;
@@ -140,6 +146,15 @@ const importAdvBilling = async (req, res) => {
         const billDate = parseAdvDate(row[headerIdx["Date"]]);
         const ipNo = cleanValue(row[headerIdx["Bill No"]]);
         const amount = parseDecimal(row[headerIdx["Amount"]]) || 0;
+
+        const ipAdm = ipNo ? await prisma.iPAdm.findUnique({ where: { ipNo } }) : null;
+        if (ipNo && !ipAdm) {
+          failed++;
+          errors.push({ rowNumber: rowNum, rowData, reason: `IPAdm not found for IP No: ${ipNo}` });
+          continue;
+        }
+        const ipId = ipAdm ? ipAdm.id : null;
+        const patientId = ipAdm ? ipAdm.patId : null;
 
         const cashAmt = parseDecimal(row[headerIdx["cash_amount"]]) || 0;
         const cardAmt = parseDecimal(row[headerIdx["card_amount"]]) || 0;
@@ -155,11 +170,12 @@ const importAdvBilling = async (req, res) => {
             where: { id: existing.id },
             data: {
               billDate: toDateOnly(billDate),
-              ipNo,
+              ipId,
+              patientId,
               grossAmount: amount,
               discountAmount: 0,
               advAdjt: 0,
-              netAmount: amount,
+              billAmt: amount,
               pymt_status: "UNREALISED",
               txn_status: "VERIFIED",
               errorReason: null,
@@ -171,14 +187,14 @@ const importAdvBilling = async (req, res) => {
           incomeTxn = await prisma.incomeTxn.create({
             data: {
               incomeSourceId: advSource.id,
-              patientId: null,
+              patientId,
               billNo,
               billDate: toDateOnly(billDate),
-              ipNo,
+              ipId,
               grossAmount: amount,
               discountAmount: 0,
               advAdjt: 0,
-              netAmount: amount,
+              billAmt: amount,
               pymt_status: "UNREALISED",
               txn_status: "VERIFIED",
             },
@@ -205,14 +221,6 @@ const importAdvBilling = async (req, res) => {
               paidBy: "SELF",
               remarks: ipNo || null,
             },
-          });
-        }
-
-        if (ipNo) {
-          await prisma.iPAdm.upsert({
-            where: { ipNo_incomeTxnId: { ipNo, incomeTxnId: incomeTxn.id } },
-            update: {},
-            create: { ipNo, incomeTxnId: incomeTxn.id },
           });
         }
       } catch (err) {
@@ -261,7 +269,7 @@ const getAdvDashboard = async (req, res) => {
 
     let unrealised = 0, realised = 0, cash = 0, bank = 0, card = 0;
     for (const txn of txns) {
-      const net = parseFloat(String(txn.netAmount)) || 0;
+      const net = parseFloat(String(txn.billAmt)) || 0;
       if (txn.pymt_status === "UNREALISED") unrealised += net;
       if (txn.pymt_status === "REALISED") realised += net;
       for (const pmt of txn.rcvdPymts) {
@@ -294,7 +302,7 @@ const getAdvTxns = async (req, res) => {
       andConditions.push({
         OR: [
           { billNo: { contains: search, mode: "insensitive" } },
-          { ipNo: { contains: search, mode: "insensitive" } },
+          { ipAdm: { ipNo: { contains: search, mode: "insensitive" } } },
         ],
       });
     }
@@ -330,6 +338,7 @@ const getAdvTxns = async (req, res) => {
         orderBy: [{ billDate: "desc" }, { id: "desc" }],
         include: {
           incomeSource: { select: { code: true, name: true } },
+          ipAdm: { select: { id: true, ipNo: true } },
           rcvdPymts: { include: { paymentMode: true } },
         },
       }),
@@ -350,6 +359,7 @@ const getAdvTxnDetail = async (req, res) => {
       where: { id: parseInt(id) },
       include: {
         incomeSource: true,
+        ipAdm: { select: { id: true, ipNo: true } },
         rcvdPymts: { include: { paymentMode: true } },
       },
     });
@@ -366,7 +376,7 @@ const getAdvImportLogs = async (req, res) => {
     const { page = 1, limit = 20 } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    const where = { fileType: "ADV" };
+    const where = { fileType: { in: ["ADV", "IP_ADM"] } };
 
     const [logs, total] = await Promise.all([
       prisma.importLog.findMany({

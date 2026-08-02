@@ -27,7 +27,7 @@ interface PayableReportItem {
     id: number;
     billNo: string;
     billDate: string;
-    netAmount: string;
+    billAmt: string;
     incomeSource: { code: string; name: string };
     patient: { id: number; name: string; uhid: string };
   };
@@ -47,7 +47,7 @@ interface ReceivableReportItem {
     id: number;
     billNo: string;
     billDate: string;
-    netAmount: string;
+    billAmt: string;
     incomeSource: { code: string; name: string };
   } | null;
 }

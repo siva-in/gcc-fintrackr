@@ -22,11 +22,10 @@ interface IncomeTxn {
   id: number;
   billNo: string;
   billDate: string | null;
-  netAmount: number | null;
+  billAmt: number | null;
   grossAmount: number | null;
   discountAmount: number | null;
   advAdjt: number | null;
-  ipNo: string | null;
   pymt_status: string;
   txn_status: string;
   errorReason: string | null;
@@ -813,7 +812,7 @@ function IncomeIPPageContent() {
                             <td className="px-5 py-3.5 text-right font-medium group-hover:text-purple-700 text-slate-700">{txn.discountAmount ? formatCurrency(Number(txn.discountAmount)) : "-"}</td>
                             <td className="px-5 py-3.5 text-right font-medium group-hover:text-purple-700 text-slate-700">{formatCurrency((Number(txn.grossAmount) || 0) - (Number(txn.discountAmount) || 0))}</td>
                             <td className="px-5 py-3.5 text-right font-medium group-hover:text-purple-700 text-slate-700">{txn.advAdjt ? formatCurrency(Number(txn.advAdjt)) : "-"}</td>
-                            <td className={`px-5 py-3.5 text-right font-medium group-hover:text-purple-700 ${isReviewReq ? "text-red-600" : "text-slate-700"}`}>{txn.netAmount ? formatCurrency(Number(txn.netAmount)) : "-"}</td>
+                            <td className={`px-5 py-3.5 text-right font-medium group-hover:text-purple-700 ${isReviewReq ? "text-red-600" : "text-slate-700"}`}>{txn.billAmt ? formatCurrency(Number(txn.billAmt)) : "-"}</td>
                             <td className="px-5 py-3.5">
                               <div className="flex flex-wrap gap-1">
                                 {txn.rcvdPymts.map((p, i) => (
@@ -834,6 +833,9 @@ function IncomeIPPageContent() {
                               <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(txn.txn_status)}`}>
                                 {txn.txn_status === "REVIEW_REQ" ? "REVIEW REQ" : txn.txn_status}
                               </span>
+                              {txn.txn_status === "ERROR" && txn.errorReason && (
+                                <span className="block text-[10px] text-red-500 max-w-[180px] truncate mt-1" title={txn.errorReason}>{txn.errorReason}</span>
+                              )}
                             </td>
                           </tr>
                           );

@@ -22,7 +22,7 @@ interface IncomeTxn {
   id: number;
   billNo: string;
   billDate: string | null;
-  netAmount: number | null;
+  billAmt: number | null;
   pymt_status: string;
   txn_status: string;
   errorReason: string | null;
@@ -551,7 +551,7 @@ function IncomeOPPageContent() {
         grossAmount: editGross || "0",
         discountAmount: editDiscount || "0",
         advAdjt: editAdjt || "0",
-        netAmount: editNet || "0",
+        billAmt: editNet || "0",
       });
       toast.success("Record updated successfully");
       setEditModalOpen(false);
@@ -1026,7 +1026,7 @@ function IncomeOPPageContent() {
                             <td className={`px-5 py-3.5 hidden sm:table-cell group-hover:text-purple-700 ${isReviewReq ? "text-red-600" : "text-slate-500"}`}>{formatDate(txn.billDate)}</td>
                             <td className={`px-5 py-3.5 group-hover:text-purple-700 ${isReviewReq ? "text-red-600" : "text-slate-700"}`}>{txn.patient?.name || "-"}</td>
                             <td className={`px-5 py-3.5 hidden md:table-cell group-hover:text-purple-700 ${isReviewReq ? "text-red-600" : "text-slate-500"}`}>{txn.patient?.uhid || "-"}</td>
-                            <td className={`px-5 py-3.5 text-right font-medium group-hover:text-purple-700 ${isReviewReq ? "text-red-600" : "text-slate-700"}`}>{txn.netAmount ? formatCurrency(Number(txn.netAmount)) : "-"}</td>
+                            <td className={`px-5 py-3.5 text-right font-medium group-hover:text-purple-700 ${isReviewReq ? "text-red-600" : "text-slate-700"}`}>{txn.billAmt ? formatCurrency(Number(txn.billAmt)) : "-"}</td>
                             <td className="px-5 py-3.5">
                               <div className="flex flex-wrap gap-1">
                                 {txn.rcvdPymts.map((p, i) => (

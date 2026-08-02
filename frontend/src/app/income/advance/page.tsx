@@ -21,14 +21,14 @@ interface Dashboard {
 interface AdvTxn {
   id: number;
   billNo: string;
-  ipNo: string | null;
   billDate: string | null;
-  netAmount: number | null;
+  billAmt: number | null;
   pymt_status: string;
   txn_status: string;
   grossAmount: number | null;
   discountAmount: number | null;
   advAdjt: number | null;
+  ipAdm?: { id: number; ipNo: string } | null;
   rcvdPymts: { id: number; amount: number | null; paymentDate: string | null; paymentMode: { code: string; name: string } | null }[];
   incomeSource: { code: string; name: string } | null;
 }
@@ -106,6 +106,7 @@ export default function IncomeAdvancePage() {
   const [logLoading, setLogLoading] = useState(false);
 
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importType, setImportType] = useState<"adv" | "ipadm">("adv");
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ inserted: number; updated: number; skipped: number; failed: number; total: number; errors?: { row: number; rowData: string; reason: string }[] } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -211,6 +212,13 @@ export default function IncomeAdvancePage() {
     setTimeout(() => fetchTxns(1, "", dashFromDate, dashToDate, paymentMode || "", pymtStatus || ""), 0);
   };
 
+  const openImportModal = (type: "adv" | "ipadm") => {
+    setImportType(type);
+    setSelectedFile(null);
+    setImportResult(null);
+    setImportModalOpen(true);
+  };
+
   const handleImport = async () => {
     if (!selectedFile) return;
     setImporting(true);
@@ -218,7 +226,8 @@ export default function IncomeAdvancePage() {
     try {
       const formData = new FormData();
       formData.append("file", selectedFile);
-      const { data } = await api.post("/income/adv/import", formData, { headers: { "Content-Type": "multipart/form-data" } });
+      const endpoint = importType === "ipadm" ? "/income/ip/import-adm" : "/income/adv/import";
+      const { data } = await api.post(endpoint, formData, { headers: { "Content-Type": "multipart/form-data" } });
       setImportResult(data);
       setSelectedFile(null);
       toast.success(data.message || "Import complete");
@@ -264,6 +273,7 @@ export default function IncomeAdvancePage() {
 
   const getFileTypeLabel = (ft: string) => {
     if (ft === "ADV") return "Advance Import";
+    if (ft === "IP_ADM") return "IP Admission";
     return ft;
   };
 
@@ -436,7 +446,7 @@ export default function IncomeAdvancePage() {
                     <tr className="border-b border-slate-200/60">
                       <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Vou.No</th>
                       <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden sm:table-cell">Date</th>
-                      <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden md:table-cell">Bill No</th>
+                      <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden md:table-cell">IP No</th>
                       <th className="text-right px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Amount</th>
                       <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Payment</th>
                       <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Status</th>
@@ -458,8 +468,8 @@ export default function IncomeAdvancePage() {
                         <tr key={txn.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50 transition-colors">
                           <td className={`px-5 py-3.5 font-medium ${isUnrealised ? "text-amber-600" : "text-slate-700"}`}>{txn.billNo}</td>
                           <td className="px-5 py-3.5 hidden sm:table-cell text-slate-500">{formatDate(txn.billDate)}</td>
-                          <td className="px-5 py-3.5 hidden md:table-cell text-slate-500">{txn.ipNo || "-"}</td>
-                          <td className="px-5 py-3.5 text-right font-medium text-slate-700">{formatCurrency(txn.netAmount)}</td>
+                          <td className="px-5 py-3.5 hidden md:table-cell text-slate-500">{txn.ipAdm?.ipNo || "-"}</td>
+                          <td className="px-5 py-3.5 text-right font-medium text-slate-700">{formatCurrency(txn.billAmt)}</td>
                           <td className="px-5 py-3.5">
                             <div className="flex flex-wrap gap-1.5">
                               {txn.rcvdPymts.length > 0 ? txn.rcvdPymts.map((pmt) => (
@@ -491,9 +501,14 @@ export default function IncomeAdvancePage() {
           <>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-slate-800">Import History</h2>
-              <Button size="sm" onClick={() => { setImportModalOpen(true); setActiveTab("importlog"); }}>
-                <Upload size={14} className="mr-1" /> Import New
-              </Button>
+              <div className="flex gap-2">
+                <Button size="sm" onClick={() => openImportModal("ipadm")}>
+                  <Upload size={14} className="mr-1" /> Import IP Admission
+                </Button>
+                <Button size="sm" onClick={() => openImportModal("adv")}>
+                  <Upload size={14} className="mr-1" /> Import New
+                </Button>
+              </div>
             </div>
 
             <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
@@ -551,12 +566,23 @@ export default function IncomeAdvancePage() {
         )}
       </div>
 
-      <Modal isOpen={importModalOpen} onClose={() => { if (!importing) setImportModalOpen(false); }} title="Import Advance Collection Report">
+      <Modal isOpen={importModalOpen} onClose={() => { if (!importing) setImportModalOpen(false); }} title={importType === "ipadm" ? "Import IP Admission" : "Import Advance Collection Report"}>
         <div className="space-y-4">
-          <p className="text-sm text-slate-500">
-            Upload an Advance Collection Excel file with columns: <strong>S.No, Vou.No, Date, Voucher Type, Bill Name, Bill No, Amount, payment_refno, cash_amount, card_amount, cheque_amount, neft_amount, UPI Amt</strong>
-          </p>
-          <p className="text-xs text-slate-400">Header rows, empty rows, and summary/total rows are auto-skipped. Duplicate Vou.No entries will be updated.</p>
+          {importType === "ipadm" ? (
+            <>
+              <p className="text-sm text-slate-500">
+                Upload an IP Admission Excel file with columns: <strong>IP Date, Entry No, UHID No, Patient Name, Status</strong>
+              </p>
+              <p className="text-xs text-slate-400">IPAdm records are created/updated based on Entry No (ipNo). Patient is linked by UHID. Status Open becomes ADMITTED, Discharged becomes DISCHARGED.</p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-slate-500">
+                Upload an Advance Collection Excel file with columns: <strong>S.No, Vou.No, Date, Voucher Type, Bill Name, Bill No, Amount, payment_refno, cash_amount, card_amount, cheque_amount, neft_amount, UPI Amt</strong>
+              </p>
+              <p className="text-xs text-slate-400">Header rows, empty rows, and summary/total rows are auto-skipped. Duplicate Vou.No entries will be updated.</p>
+            </>
+          )}
 
           <div className="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center hover:border-indigo-400 transition-colors">
             <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) { setSelectedFile(f); setImportResult(null); } }} />

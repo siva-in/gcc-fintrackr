@@ -174,7 +174,7 @@ const importLabBilling = async (req, res) => {
         const billDate = parseDate(row[headerIdx["Date"]]);
         const amount = parseDecimal(row[headerIdx["Amount"]]) || 0;
         const discAmt = parseDecimal(row[headerIdx["Disc Amt"]]) || 0;
-        const netAmount = parseDecimal(row[headerIdx["Net Amount"]]) || 0;
+        const billAmt = parseDecimal(row[headerIdx["Net Amount"]]) || 0;
         const cashAmt = parseDecimal(row[headerIdx["Cash Amount"]]) || 0;
         const bankAmt = parseDecimal(row[headerIdx["Bank Amount"]]) || 0;
         const creditAmt = parseDecimal(row[headerIdx["Credit Amount"]]) || 0;
@@ -214,7 +214,7 @@ const importLabBilling = async (req, res) => {
         const txnStatusBase = bankAmt > 0 ? "REVIEW_REQ" : "UNVERIFIED";
         const paidAmt = cashAmt + bankAmt;
         const unpaid = creditAmt;
-        const net = netAmount;
+        const net = billAmt;
 
         let pymtStatus, txnStatus;
 
@@ -240,7 +240,7 @@ const importLabBilling = async (req, res) => {
               billDate: toDateOnly(billDate),
               grossAmount: amount,
               discountAmount: discAmt,
-              netAmount,
+              billAmt,
               errorReason: txnStatus === "ERROR" ? "Payment mismatch" : null,
             }, pymtStatus, txnStatus),
           });
@@ -258,7 +258,7 @@ const importLabBilling = async (req, res) => {
               grossAmount: amount,
               discountAmount: discAmt,
               advAdjt: 0,
-              netAmount,
+              billAmt,
             }, pymtStatus, txnStatus),
           });
           inserted++;
@@ -475,7 +475,7 @@ const getLabTxnDetail = async (req, res) => {
 const updateLabTxnError = async (req, res) => {
   try {
     const { id } = req.params;
-    const { pymt_status, txn_status, errorReason, grossAmount, discountAmount, advAdjt, netAmount } = req.body;
+    const { pymt_status, txn_status, errorReason, grossAmount, discountAmount, advAdjt, billAmt } = req.body;
 
     const txn = await prisma.incomeTxn.findUnique({ where: { id: parseInt(id) } });
     if (!txn) return res.status(404).json({ message: "Transaction not found" });
@@ -490,7 +490,7 @@ const updateLabTxnError = async (req, res) => {
     if (grossAmount !== undefined) data.grossAmount = parseFloat(grossAmount) || 0;
     if (discountAmount !== undefined) data.discountAmount = parseFloat(discountAmount) || 0;
     if (advAdjt !== undefined) data.advAdjt = parseFloat(advAdjt) || 0;
-    if (netAmount !== undefined) data.netAmount = parseFloat(netAmount) || 0;
+    if (billAmt !== undefined) data.billAmt = parseFloat(billAmt) || 0;
 
     const updated = await prisma.incomeTxn.update({ where: { id: parseInt(id) }, data });
     res.json(updated);
@@ -720,7 +720,7 @@ const updateLabPayments = async (req, res) => {
 
     const totalPaid = cashTotal + bankTotal + (creditUnpaid ? 0 : creditTotal);
     let pymtStatus = "UNPAID";
-    if (totalPaid >= parseFloat(String(txn.netAmount)) - 0.01) pymtStatus = "FULLYPAID";
+    if (totalPaid >= parseFloat(String(txn.billAmt)) - 0.01) pymtStatus = "FULLYPAID";
     else if (totalPaid > 0) pymtStatus = "PARTIALPAID";
 
     let txnStatus = "VERIFIED";

@@ -5,6 +5,7 @@ const DUMMY_VALUES = ["--none--", "undefined", "null", "n/a", "na", "-"];
 
 const IP_BILLING_HEADERS = ["S.No", "Date", "Bill No", "IP No", "Patient Name", "Terms", "Total Amount", "Discount", "Bill Amount", "Less Advance", "Net Amount", "cash_amount", "bank_amount", "credit_amount", "company_amount", "insurance_amount"];
 const IP_DETAIL_HEADERS = ["S.No", "Bill Date", "Bill No", "UHID", "Patient Name", "Description", "Amount", "age", "Sex", "Consult Dr"];
+const IP_ADM_HEADERS = ["Entry No", "IP Date", "UHID No", "Patient Name", "Status"];
 
 const parseDate = (val) => {
   if (!val) return null;
@@ -178,7 +179,7 @@ const importIPBilling = async (req, res) => {
       const discount = parseDecimal(row[headerIdx["Discount"]]) || 0;
       const billAmount = parseDecimal(row[headerIdx["Bill Amount"]]) || 0;
       const lessAdvance = parseDecimal(row[headerIdx["Less Advance"]]) || 0;
-      const netAmount = parseDecimal(row[headerIdx["Net Amount"]]) || 0;
+      const billAmt = parseDecimal(row[headerIdx["Net Amount"]]) || 0;
       const cashAmt = parseDecimal(row[headerIdx["cash_amount"]]) || 0;
       const bankAmt = parseDecimal(row[headerIdx["bank_amount"]]) || 0;
       const creditAmt = parseDecimal(row[headerIdx["credit_amount"]]) || 0;
@@ -187,10 +188,11 @@ const importIPBilling = async (req, res) => {
 
       const paidAmt = cashAmt + bankAmt + companyAmt + insuranceAmt;
       const unpaid = creditAmt;
-      const net = netAmount;
+      const net = billAmt;
       const txnStatusBase = bankAmt > 0 ? "REVIEW_REQ" : "UNVERIFIED";
 
       let pymtStatus, txnStatus;
+      let errorReason = null;
 
       if (unpaid > 0 && paidAmt === 0 && unpaid === net) {
         pymtStatus = "UNPAID";
@@ -204,9 +206,28 @@ const importIPBilling = async (req, res) => {
       } else {
         pymtStatus = "UNPAID";
         txnStatus = "ERROR";
+        errorReason = `Payment mismatch: paid (${paidAmt}) + credit (${unpaid}) does not equal net amount (${net})`;
       }
 
       try {
+        const ipAdm = ipNo ? await prisma.iPAdm.findUnique({ where: { ipNo } }) : null;
+        if (ipNo && !ipAdm) {
+          failed++;
+          errors.push({ rowNumber: headerRowIndex + 2 + i, rowData: getRowValuesAsText(row, IP_BILLING_HEADERS, headerIdx), reason: `IPAdm not found for IP No: ${ipNo}` });
+          continue;
+        }
+        const ipId = ipAdm ? ipAdm.id : null;
+        const patientId = ipAdm ? ipAdm.patId : null;
+
+        if (ipAdm) {
+          const admUpdate = {};
+          if (ipAdm.status === "ADMITTED") admUpdate.status = "DISCHARGED";
+          if (!ipAdm.dischargeDt) admUpdate.dischargeDt = billDate ? toDateOnly(billDate) : null;
+          if (Object.keys(admUpdate).length > 0) {
+            await prisma.iPAdm.update({ where: { id: ipAdm.id }, data: admUpdate });
+          }
+        }
+
         const existing = await prisma.incomeTxn.findFirst({ where: { billNo } });
 
         let incomeTxn;
@@ -214,14 +235,14 @@ const importIPBilling = async (req, res) => {
           incomeTxn = await prisma.incomeTxn.update({
             where: { id: existing.id },
             data: withIncomeTxnStatusData({
-              patientId: null,
+              patientId,
               billDate: toDateOnly(billDate),
-              ipNo: ipNo || null,
+              ipId,
               grossAmount: totalAmount,
               discountAmount: discount,
               advAdjt: lessAdvance,
-              netAmount,
-              errorReason: txnStatus === "ERROR" ? "Payment mismatch" : null,
+              billAmt,
+              errorReason,
             }, pymtStatus, txnStatus),
           });
           await prisma.rcvdPymt.deleteMany({ where: { incomeTxnId: existing.id } });
@@ -231,14 +252,15 @@ const importIPBilling = async (req, res) => {
           incomeTxn = await prisma.incomeTxn.create({
             data: withIncomeTxnStatusData({
               incomeSourceId: ipSource.id,
-              patientId: null,
+              patientId,
               billNo,
               billDate: toDateOnly(billDate),
-              ipNo: ipNo || null,
+              ipId,
               grossAmount: totalAmount,
               discountAmount: discount,
               advAdjt: lessAdvance,
-              netAmount,
+              billAmt,
+              errorReason,
             }, pymtStatus, txnStatus),
           });
           inserted++;
@@ -267,20 +289,11 @@ const importIPBilling = async (req, res) => {
           }
         }
 
-        if (ipNo) {
-          const existing = await prisma.iPAdm.findFirst({ where: { ipNo } });
-          if (existing) {
-            await prisma.iPAdm.update({ where: { id: existing.id }, data: { incomeTxnId: incomeTxn.id } });
-          } else {
-            await prisma.iPAdm.create({ data: { ipNo, incomeTxnId: incomeTxn.id } });
-          }
-        }
-
         if (lessAdvance > 0 && advSource) {
           const advTxns = await prisma.incomeTxn.findMany({
-            where: { ipNo, incomeSourceId: advSource.id, pymt_status: "UNREALISED" },
+            where: { ipId, incomeSourceId: advSource.id, pymt_status: "UNREALISED" },
           });
-          const advSum = advTxns.reduce((sum, t) => sum + (parseFloat(String(t.netAmount)) || 0), 0);
+          const advSum = advTxns.reduce((sum, t) => sum + (parseFloat(String(t.billAmt)) || 0), 0);
           if (Math.abs(advSum - lessAdvance) < 0.01) {
             await prisma.incomeTxn.updateMany({
               where: { id: { in: advTxns.map((t) => t.id) } },
@@ -289,7 +302,7 @@ const importIPBilling = async (req, res) => {
           } else {
             await prisma.incomeTxn.update({
               where: { id: incomeTxn.id },
-              data: { txn_status: "ERROR", errorReason: "advance miss match" },
+              data: { txn_status: "ERROR", errorReason: `Advance mismatch: expected ${lessAdvance}, found ${advSum}` },
             });
           }
         }
@@ -395,27 +408,19 @@ const importIPDetailReport = async (req, res) => {
           await prisma.patient.update({ where: { id: patient.id }, data: { name } });
         }
 
-        const ipNo = incomeTxn.ipNo;
+        const ipId = incomeTxn.ipId;
 
-        if (patient && ipNo) {
+        if (patient && ipId) {
           await prisma.incomeTxn.updateMany({
-            where: { ipNo, incomeSourceId: ipSource.id, patientId: null },
+            where: { ipId, incomeSourceId: ipSource.id, patientId: null },
             data: { patientId: patient.id },
           });
-          await prisma.iPAdm.updateMany({
-            where: { ipNo, patientId: null },
-            data: { patientId: patient.id },
-          });
-        } else if (patient && !ipNo) {
+        } else if (patient) {
           const nextTxnStatus = incomeTxn.txn_status === "VERIFIED" ? "UNVERIFIED" : undefined;
           await prisma.incomeTxn.update({
             where: { id: incomeTxn.id },
             data: withIncomeTxnStatusData({ patientId: patient.id }, undefined, nextTxnStatus),
           });
-          const ipAdm = await prisma.iPAdm.findUnique({ where: { incomeTxnId: incomeTxn.id } });
-          if (ipAdm) {
-            await prisma.iPAdm.update({ where: { id: ipAdm.id }, data: { patientId: patient.id } });
-          }
         }
       }
 
@@ -461,6 +466,101 @@ const importIPDetailReport = async (req, res) => {
     res.json({ message: "IP Detail import complete", importLogId: importLog?.id, total: totalRecords, inserted, skipped, failed, errors });
   } catch (error) {
     console.error("ImportIPDetailReport error:", error);
+    if (importLog) await prisma.importLog.update({ where: { id: importLog.id }, data: { importEnded: new Date() } }).catch(() => {});
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+const importIPAdm = async (req, res) => {
+  let importLog = null;
+  try {
+    if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+
+    const rows = await readFirstSheetRowsFromBuffer(req.file.buffer, { defval: "" });
+
+    const headerRowIndex = findHeaderRow(rows, ["entry no", "ip date"]);
+    if (headerRowIndex < 0) return res.status(400).json({ message: "Could not find header row with Entry No and IP Date" });
+
+    const headerRow = rows[headerRowIndex];
+    const headerIdx = buildHeaderIndex(headerRow, IP_ADM_HEADERS);
+
+    const missing = IP_ADM_HEADERS.filter((h) => headerIdx[h] < 0);
+    if (missing.length > 0) return res.status(400).json({ message: `Missing columns: ${missing.join(", ")}` });
+
+    importLog = await prisma.importLog.create({
+      data: { fileName: req.file.originalname, fileType: "IP_ADM", totalRecords: 0, inserted: 0, updated: 0, skipped: 0, failed: 0, createdBy: req.user?.id || null },
+    });
+
+    const errors = [];
+    let inserted = 0, updated = 0, skipped = 0, failed = 0, totalRecords = 0;
+
+    const dataRows = rows.slice(headerRowIndex + 1);
+
+    for (let i = 0; i < dataRows.length; i++) {
+      const row = dataRows[i];
+      const entryNoIdx = headerIdx["Entry No"];
+      if (isSkippableRow(row, entryNoIdx)) continue;
+      totalRecords++;
+
+      const ipNo = cleanValue(row[headerIdx["Entry No"]]);
+      const date = parseDate(row[headerIdx["IP Date"]]);
+      const uhid = cleanValue(row[headerIdx["UHID No"]]);
+      const statusRaw = cleanValue(row[headerIdx["Status"]]);
+
+      if (!ipNo || !date) {
+        failed++;
+        errors.push({ rowNumber: headerRowIndex + 2 + i, rowData: getRowValuesAsText(row, IP_ADM_HEADERS, headerIdx), reason: "Missing Entry No or IP Date" });
+        continue;
+      }
+
+      const statusMap = { OPEN: "ADMITTED", DISCHARGED: "DISCHARGED", CANCEL: "CANCELLED", CANCELLED: "CANCELLED", ADMITTED: "ADMITTED" };
+      const status = statusMap[String(statusRaw || "").toUpperCase()] || "ADMITTED";
+
+      try {
+        let patient = null;
+        if (uhid) {
+          patient = await prisma.patient.findFirst({ where: { uhid } });
+        }
+        if (!patient) {
+          failed++;
+          errors.push({ rowNumber: headerRowIndex + 2 + i, rowData: getRowValuesAsText(row, IP_ADM_HEADERS, headerIdx), reason: `Patient not found for UHID: ${uhid || "N/A"}` });
+          continue;
+        }
+
+        const existing = await prisma.iPAdm.findUnique({ where: { ipNo } });
+        if (existing) {
+          await prisma.iPAdm.update({
+            where: { id: existing.id },
+            data: { date: new Date(`${date}T00:00:00.000Z`), patId: patient.id, status },
+          });
+          updated++;
+        } else {
+          await prisma.iPAdm.create({
+            data: { ipNo, date: new Date(`${date}T00:00:00.000Z`), patId: patient.id, status },
+          });
+          inserted++;
+        }
+      } catch (err) {
+        failed++;
+        errors.push({ rowNumber: headerRowIndex + 2 + i, rowData: getRowValuesAsText(row, IP_ADM_HEADERS, headerIdx), reason: err.message || "Processing error" });
+      }
+    }
+
+    if (importLog) {
+      await prisma.importLog.update({
+        where: { id: importLog.id },
+        data: { totalRecords, inserted, updated, skipped, failed, importEnded: new Date() },
+      });
+      if (errors.length > 0) {
+        await prisma.importError.createMany({
+          data: errors.map((e) => ({ importLogId: importLog.id, rowNumber: e.rowNumber, rowData: e.rowData, reason: e.reason })),
+        });
+      }
+    }
+
+    res.json({ message: "IP Adm import complete", importLogId: importLog?.id, total: totalRecords, inserted, updated, skipped, failed, errors });
+  } catch (error) {
+    console.error("ImportIPAdm error:", error);
     if (importLog) await prisma.importLog.update({ where: { id: importLog.id }, data: { importEnded: new Date() } }).catch(() => {});
     res.status(500).json({ message: "Internal server error" });
   }
@@ -522,7 +622,7 @@ const getIPTxns = async (req, res) => {
       andConditions.push({
         OR: [
           { billNo: { contains: search, mode: "insensitive" } },
-          { ipNo: { contains: search, mode: "insensitive" } },
+          { ipAdm: { ipNo: { contains: search, mode: "insensitive" } } },
           { patient: { name: { contains: search, mode: "insensitive" } } },
           { patient: { uhid: { contains: search, mode: "insensitive" } } },
         ],
@@ -601,6 +701,7 @@ const getIPTxnDetail = async (req, res) => {
       include: {
         patient: true,
         incomeSource: true,
+        ipAdm: true,
         rcvdPymts: { include: { paymentMode: true } },
         payables: { include: { doctor: true, bizPartner: true } },
         incomeDtls: true,
@@ -618,7 +719,7 @@ const getIPTxnDetail = async (req, res) => {
 const updateIPTxnError = async (req, res) => {
   try {
     const { id } = req.params;
-    const { pymt_status, txn_status, errorReason, grossAmount, discountAmount, advAdjt, netAmount } = req.body;
+    const { pymt_status, txn_status, errorReason, grossAmount, discountAmount, advAdjt, billAmt } = req.body;
 
     const txn = await prisma.incomeTxn.findUnique({ where: { id: parseInt(id) } });
     if (!txn) return res.status(404).json({ message: "Transaction not found" });
@@ -633,7 +734,7 @@ const updateIPTxnError = async (req, res) => {
     if (grossAmount !== undefined) data.grossAmount = parseFloat(grossAmount) || 0;
     if (discountAmount !== undefined) data.discountAmount = parseFloat(discountAmount) || 0;
     if (advAdjt !== undefined) data.advAdjt = parseFloat(advAdjt) || 0;
-    if (netAmount !== undefined) data.netAmount = parseFloat(netAmount) || 0;
+    if (billAmt !== undefined) data.billAmt = parseFloat(billAmt) || 0;
 
     const updated = await prisma.incomeTxn.update({ where: { id: parseInt(id) }, data });
     res.json(updated);
@@ -727,7 +828,7 @@ const reviewIPTxn = async (req, res) => {
         }
       }
 
-      const netAmt = parseFloat(String(txn.netAmount)) || 0;
+      const netAmt = parseFloat(String(txn.billAmt)) || 0;
       if (insuranceAndCreditTotal > 0) {
         if (Math.abs(netAmt - insuranceAndCreditTotal) <= 0.01) newPymtStatus = "UNPAID";
         else if (netAmt > insuranceAndCreditTotal + 0.01) newPymtStatus = "PARTIALPAID";
@@ -1066,7 +1167,7 @@ const getIPReferralPartners = async (req, res) => {
 };
 
 module.exports = {
-  importIPBilling, importIPDetailReport, getIPDashboard, getIPTxns, getIPTxnDetail,
+  importIPBilling, importIPDetailReport, importIPAdm, getIPDashboard, getIPTxns, getIPTxnDetail,
   updateIPTxnError, reviewIPTxn, getIPDoctorSummary, getIPDoctorPayables,
   recordIPPayablePayment, getIPImportLogs, getIPImportErrors, getIPPaymentModes, getIPInsurancePartners,
   getIPReferralPartners,

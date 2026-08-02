@@ -2,7 +2,7 @@ const express = require("express");
 const multer = require("multer");
 const router = express.Router();
 const {
-  importIPBilling, importIPDetailReport, getIPDashboard, getIPTxns, getIPTxnDetail,
+  importIPBilling, importIPDetailReport, importIPAdm, getIPDashboard, getIPTxns, getIPTxnDetail,
   updateIPTxnError, reviewIPTxn, getIPDoctorSummary, getIPDoctorPayables,
   recordIPPayablePayment, getIPImportLogs, getIPImportErrors, getIPPaymentModes, getIPInsurancePartners,
   getIPReferralPartners,
@@ -27,6 +27,7 @@ router.get("/referral-partners", getIPReferralPartners);
 router.get("/import-logs", getIPImportLogs);
 router.get("/import-logs/:id/errors", getIPImportErrors);
 router.post("/import", upload.single("file"), importIPBilling);
+router.post("/import-adm", upload.single("file"), importIPAdm);
 router.post("/import-detail", upload.single("file"), importIPDetailReport);
 
 module.exports = router;
