@@ -23,6 +23,7 @@ const PAYMENT_MODES = [
   { code: "CHEQUE", name: "Cheque" },
   { code: "CREDIT", name: "Credit" },
   { code: "INSURANCE", name: "Insurance" },
+  { code: "COMPANY", name: "Company" },
 ];
 
 const INSURANCE_BIZ_PARTNERS = [
@@ -173,6 +174,21 @@ async function seedInsuranceBizPartners(runner) {
   }
 }
 
+async function seedUnknownBizPartner(runner) {
+  const existing = await runner.bizPartner.findFirst({
+    where: { bpName: "UNKNOWN" },
+  });
+  if (!existing) {
+    await runner.bizPartner.create({
+      data: {
+        bpType: "OTHER",
+        bpName: "UNKNOWN",
+        isActive: true,
+      },
+    });
+  }
+}
+
 async function seedVendorBizPartners(runner) {
   for (const v of VENDOR_BIZ_PARTNERS) {
     const existing = await runner.bizPartner.findFirst({
@@ -304,6 +320,7 @@ async function main() {
   await seedPaymentModes(prisma);
   await seedInsuranceBizPartners(prisma);
   await seedVendorBizPartners(prisma);
+  await seedUnknownBizPartner(prisma);
   await seedConfigMaster(prisma);
   await seedDoctors(prisma);
 }

@@ -268,6 +268,7 @@ const getAdvDashboard = async (req, res) => {
     });
 
     let unrealised = 0, realised = 0, cash = 0, bank = 0, card = 0;
+    const modeTotals = {};
     for (const txn of txns) {
       const net = parseFloat(String(txn.billAmt)) || 0;
       if (txn.pymt_status === "UNREALISED") unrealised += net;
@@ -275,13 +276,18 @@ const getAdvDashboard = async (req, res) => {
       for (const pmt of txn.rcvdPymts) {
         const code = pmt.paymentMode?.code;
         const amt = parseFloat(String(pmt.amount)) || 0;
+        if (!code) continue;
         if (code === "CASH") cash += amt;
         else if (code === "CARD") card += amt;
         else if (["BANK", "UPI", "CHEQUE"].includes(code)) bank += amt;
+        if (!modeTotals[code]) modeTotals[code] = { code, name: pmt.paymentMode.name || code, total: 0 };
+        modeTotals[code].total += amt;
       }
     }
 
-    res.json({ unrealised, realised, cash, bank, card, total: unrealised + realised });
+    const paymentModes = Object.values(modeTotals).sort((a, b) => b.total - a.total);
+
+    res.json({ unrealised, realised, cash, bank, card, paymentModes, total: unrealised + realised });
   } catch (error) {
     console.error("GetAdvDashboard error:", error);
     res.status(500).json({ message: "Internal server error" });
@@ -340,6 +346,7 @@ const getAdvTxns = async (req, res) => {
           incomeSource: { select: { code: true, name: true } },
           ipAdm: { select: { id: true, ipNo: true } },
           rcvdPymts: { include: { paymentMode: true } },
+          realisedByTxn: { select: { billNo: true, billDate: true } },
         },
       }),
       prisma.incomeTxn.count({ where }),
@@ -361,6 +368,7 @@ const getAdvTxnDetail = async (req, res) => {
         incomeSource: true,
         ipAdm: { select: { id: true, ipNo: true } },
         rcvdPymts: { include: { paymentMode: true } },
+        realisedByTxn: { select: { billNo: true, billDate: true } },
       },
     });
     if (!txn) return res.status(404).json({ message: "Transaction not found" });

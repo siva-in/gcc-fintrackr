@@ -148,6 +148,8 @@ const importIPBilling = async (req, res) => {
     const modeMap = {};
     allPaymentModes.forEach((pm) => { modeMap[pm.code] = pm.id; });
 
+    const unknownBp = await prisma.bizPartner.findFirst({ where: { bpName: "UNKNOWN" } });
+
     importLog = await prisma.importLog.create({
       data: { fileName: req.file.originalname, fileType: "IP", totalRecords: 0, inserted: 0, updated: 0, skipped: 0, failed: 0, createdBy: req.user?.id || null },
     });
@@ -277,15 +279,54 @@ const importIPBilling = async (req, res) => {
               data: { incomeTxnId: incomeTxn.id, paymentModeId: modeMap["BANK"] || null, amount: bankAmt, paymentDate: toDateOnly(billDate), paidBy: "SELF" },
             });
           }
-          if (companyAmt > 0) {
-            await prisma.rcvdPymt.create({
-              data: { incomeTxnId: incomeTxn.id, paymentModeId: modeMap["COMPANY"] || null, amount: companyAmt, paymentDate: toDateOnly(billDate), paidBy: "SELF" },
-            });
-          }
-          if (insuranceAmt > 0) {
-            await prisma.rcvdPymt.create({
-              data: { incomeTxnId: incomeTxn.id, paymentModeId: modeMap["INSURANCE"] || null, amount: insuranceAmt, paymentDate: toDateOnly(billDate), paidBy: "SELF" },
-            });
+
+          if (patientId) {
+            const receivableBase = {
+              patId: patientId,
+              incomeTxnId: incomeTxn.id,
+              billDate: toDateOnly(billDate) || new Date(),
+              dueDate: toDateOnly(addOneMonth(billDate)),
+              dueAmt: 0,
+              balanceAmt: 0,
+              status: "PENDING",
+              createdBy: req.user?.username || null,
+            };
+            if (companyAmt > 0) {
+              await prisma.receivable.create({
+                data: {
+                  ...receivableBase,
+                  arType: "CORPORATE",
+                  bpId: unknownBp ? unknownBp.id : null,
+                  dueAmt: companyAmt,
+                  balanceAmt: companyAmt,
+                  remarks: "Company receivable",
+                },
+              });
+            }
+            if (insuranceAmt > 0) {
+              await prisma.receivable.create({
+                data: {
+                  ...receivableBase,
+                  arType: "INSURANCE",
+                  bpId: unknownBp ? unknownBp.id : null,
+                  dueAmt: insuranceAmt,
+                  balanceAmt: insuranceAmt,
+                  remarks: "Insurance receivable",
+                },
+              });
+            }
+            if (creditAmt > 0) {
+              await prisma.receivable.create({
+                data: {
+                  ...receivableBase,
+                  arType: "PATIENT",
+                  bpId: null,
+                  dueAmt: creditAmt,
+                  balanceAmt: creditAmt,
+                  remarks: "Credit receivable",
+                },
+              });
+            }
           }
         }
 
@@ -356,7 +397,7 @@ const importIPDetailReport = async (req, res) => {
     if (!ipSource) return res.status(500).json({ message: "IP income source not found" });
 
     const errors = [];
-    let inserted = 0, skipped = 0, failed = 0, totalRecords = 0;
+    let inserted = 0, updated = 0, skipped = 0, failed = 0, totalRecords = 0;
 
     const dataRows = rows.slice(headerRowIndex + 1);
     const firstBillNo = getFirstDataBillNo(dataRows, headerIdx["Bill No"], headerIdx["S.No"]);
@@ -425,17 +466,23 @@ const importIPDetailReport = async (req, res) => {
       }
 
       try {
-        await prisma.incomeDtl.create({
-          data: {
-            incomeTxnId: incomeTxn.id,
-            uhid: uhid || null,
-            description: description || null,
-            amount,
-            billDate: toDateOnly(billDate),
-            createdBy: req.user?.username || null,
-          },
+        const dtlData = {
+          uhid: uhid || null,
+          description: description || null,
+          amount,
+          billDate: toDateOnly(billDate),
+          createdBy: req.user?.username || null,
+        };
+        const existingDtl = await prisma.incomeDtl.findFirst({
+          where: { incomeTxnId: incomeTxn.id, description: description || null, amount },
         });
-        inserted++;
+        if (existingDtl) {
+          await prisma.incomeDtl.update({ where: { id: existingDtl.id }, data: dtlData });
+          updated++;
+        } else {
+          await prisma.incomeDtl.create({ data: { incomeTxnId: incomeTxn.id, ...dtlData } });
+          inserted++;
+        }
       } catch (err) {
         failed++;
         errors.push({ rowNumber: headerRowIndex + 2 + i, rowData: getRowValuesAsText(row, IP_DETAIL_HEADERS, headerIdx), reason: err.message || "Processing error" });
@@ -454,7 +501,7 @@ const importIPDetailReport = async (req, res) => {
     if (importLog) {
       await prisma.importLog.update({
         where: { id: importLog.id },
-        data: { totalRecords, inserted, updated: 0, skipped, failed, importEnded: new Date() },
+        data: { totalRecords, inserted, updated, skipped, failed, importEnded: new Date() },
       });
       if (errors.length > 0) {
         await prisma.importError.createMany({
@@ -579,7 +626,10 @@ const getIPDashboard = async (req, res) => {
       if (toDate) where.billDate.lte = new Date(`${toDate}T23:59:59.999Z`);
     }
 
-    const txns = await prisma.incomeTxn.findMany({ where, include: { rcvdPymts: { include: { paymentMode: true } } } });
+    const txns = await prisma.incomeTxn.findMany({
+      where,
+      include: { rcvdPymts: { include: { paymentMode: true } }, receivables: true },
+    });
 
     let cash = 0, bank = 0, credit = 0;
     for (const txn of txns) {
@@ -589,6 +639,9 @@ const getIPDashboard = async (req, res) => {
         if (code === "CASH") cash += amt;
         else if (["BANK", "CARD", "UPI"].includes(code)) bank += amt;
         else if (code === "CREDIT") credit += amt;
+      }
+      for (const rec of txn.receivables) {
+        credit += parseFloat(String(rec.dueAmt)) || 0;
       }
     }
 
@@ -755,6 +808,8 @@ const reviewIPTxn = async (req, res) => {
 
     let newPymtStatus = null;
 
+    const unknownBp = await prisma.bizPartner.findFirst({ where: { bpName: "UNKNOWN" } });
+
     // Update received payments
     if (rcvdPymts && Array.isArray(rcvdPymts)) {
       const insuranceMode = await prisma.paymentMode.findFirst({ where: { code: "INSURANCE" } });
@@ -774,7 +829,8 @@ const reviewIPTxn = async (req, res) => {
       const modeById = {};
       modeRows.forEach((m) => { modeById[m.id] = m; });
 
-      let insuranceAndCreditTotal = 0;
+      let paidTotal = 0;
+      let creditTotal = 0;
 
       for (const p of rcvdPymts) {
         if (!p.amount || parseFloat(p.amount) <= 0) continue;
@@ -789,31 +845,20 @@ const reviewIPTxn = async (req, res) => {
         if (modeCode === "INSURANCE" && !p.insurancePartnerId) {
           return res.status(400).json({ message: "Insurance company is required for insurance payment mode" });
         }
+        if (modeCode === "INSURANCE" && unknownBp && parseInt(p.insurancePartnerId) === unknownBp.id) {
+          return res.status(400).json({ message: "Please select an actual insurance company instead of UNKNOWN" });
+        }
 
-        await prisma.rcvdPymt.create({
-          data: {
-            incomeTxnId: parseInt(id),
-            paymentModeId,
-            amount,
-            paymentDate: p.paymentDate ? toDateOnly(p.paymentDate) : null,
-            transactionNo: p.transactionNo || null,
-            bankName: p.bankName || null,
-            paidBy: p.paidBy || null,
-            remarks: p.remarks || null,
-          },
-        });
+        const isReceivableMode = modeCode === "INSURANCE" || modeCode === "CREDIT" || modeCode === "COMPANY";
 
-        if (modeCode === "INSURANCE" || modeCode === "CREDIT") {
-          if (modeCode === "INSURANCE") {
-            insuranceAndCreditTotal += amount;
-          } else if (modeCode === "CREDIT") {
-            insuranceAndCreditTotal += amount;
-          }
+        if (isReceivableMode) {
+          if (modeCode === "CREDIT") creditTotal += amount;
+          else paidTotal += amount;
 
           await prisma.receivable.create({
             data: {
-              arType: modeCode === "INSURANCE" ? "INSURANCE" : "PATIENT",
-              bpId: modeCode === "INSURANCE" ? parseInt(p.insurancePartnerId) : null,
+              arType: modeCode === "INSURANCE" ? "INSURANCE" : modeCode === "COMPANY" ? "CORPORATE" : "PATIENT",
+              bpId: modeCode === "INSURANCE" ? parseInt(p.insurancePartnerId) : modeCode === "COMPANY" ? (unknownBp ? unknownBp.id : null) : null,
               patId: txn.patientId,
               incomeTxnId: parseInt(id),
               billDate: txn.billDate || new Date(),
@@ -821,24 +866,39 @@ const reviewIPTxn = async (req, res) => {
               dueAmt: amount,
               balanceAmt: amount,
               status: "PENDING",
-              remarks: modeCode === "INSURANCE" ? "Insurance receivable" : "Credit receivable",
+              remarks: modeCode === "INSURANCE" ? "Insurance receivable" : modeCode === "COMPANY" ? "Company receivable" : "Credit receivable",
               createdBy: req.user?.username || null,
+            },
+          });
+        } else {
+          paidTotal += amount;
+
+          await prisma.rcvdPymt.create({
+            data: {
+              incomeTxnId: parseInt(id),
+              paymentModeId,
+              amount,
+              paymentDate: p.paymentDate ? toDateOnly(p.paymentDate) : null,
+              transactionNo: p.transactionNo || null,
+              bankName: p.bankName || null,
+              paidBy: p.paidBy || null,
+              remarks: p.remarks || null,
             },
           });
         }
       }
 
       const netAmt = parseFloat(String(txn.billAmt)) || 0;
-      if (insuranceAndCreditTotal > 0) {
-        if (Math.abs(netAmt - insuranceAndCreditTotal) <= 0.01) newPymtStatus = "UNPAID";
-        else if (netAmt > insuranceAndCreditTotal + 0.01) newPymtStatus = "PARTIALPAID";
-        else newPymtStatus = "FULLYPAID";
+      if (creditTotal > 0 && paidTotal === 0 && Math.abs(creditTotal - netAmt) <= 0.01) {
+        newPymtStatus = "UNPAID";
+      } else if (paidTotal > 0 && Math.abs(paidTotal - netAmt) <= 0.01) {
+        newPymtStatus = "FULLYPAID";
+      } else if (paidTotal > 0 && creditTotal > 0 && Math.abs(paidTotal + creditTotal - netAmt) <= 0.01) {
+        newPymtStatus = "PARTIALPAID";
+      } else if (paidTotal > 0) {
+        newPymtStatus = "PARTIALPAID";
       } else {
-        const allPymts = await prisma.rcvdPymt.findMany({ where: { incomeTxnId: parseInt(id) } });
-        const totalPaid = allPymts.reduce((sum, pm) => sum + (parseFloat(String(pm.amount)) || 0), 0);
-        if (totalPaid >= netAmt - 0.01) newPymtStatus = "FULLYPAID";
-        else if (totalPaid > 0) newPymtStatus = "PARTIALPAID";
-        else newPymtStatus = "UNPAID";
+        newPymtStatus = "UNPAID";
       }
     }
 

@@ -62,6 +62,13 @@ const getRowValuesAsText = (row, headers, headerIdx) => {
 
 const toDateOnly = (dateStr) => (dateStr ? new Date(`${dateStr}T00:00:00.000Z`) : null);
 
+const toDateStr = (d) => {
+  if (!d) return null;
+  const dt = d instanceof Date ? d : new Date(d);
+  if (isNaN(dt.getTime())) return null;
+  return dt.toISOString().split("T")[0];
+};
+
 const withIncomeTxnStatusData = (data, pymtStatus, txnStatus) => {
   const next = { ...data };
   if (pymtStatus != null) next.pymt_status = pymtStatus;
@@ -149,7 +156,7 @@ const importLabBilling = async (req, res) => {
 
     const dataRows = rows.slice(headerRowIndex + 1);
     const firstBillNo = getFirstDataBillNo(dataRows, headerIdx["Bill No"], headerIdx["S.No"]);
-    if (!startsWithPrefix(firstBillNo, "LB")) {
+    if (!startsWithPrefix(firstBillNo, "LB") && !startsWithPrefix(firstBillNo, "LIP")) {
       return res.status(400).json({ message: "File is not valid Lab billing file" });
     }
 
@@ -208,6 +215,28 @@ const importLabBilling = async (req, res) => {
           continue;
         }
 
+        // Link IPAdm when the bill date falls within an admission window
+        let ipId = null;
+        let ipError = null;
+        if (patientId) {
+          const adms = await prisma.iPAdm.findMany({ where: { patId: patientId }, orderBy: { id: "desc" } });
+          let adm = adms.find((a) => a.status === "ADMITTED");
+          if (!adm) {
+            adm = adms.find(
+              (a) =>
+                a.status === "DISCHARGED" &&
+                a.dischargeDt &&
+                billDate &&
+                billDate >= toDateStr(a.date) &&
+                billDate <= toDateStr(a.dischargeDt),
+            );
+          }
+          if (adm) ipId = adm.id;
+        }
+        if (startsWithPrefix(billNo, "LIP") && !ipId) {
+          ipError = "IP Adm not found";
+        }
+
         const existing = await prisma.incomeTxn.findFirst({ where: { billNo } });
 
         let incomeTxn;
@@ -232,16 +261,25 @@ const importLabBilling = async (req, res) => {
           txnStatus = "ERROR";
         }
 
+        let errorReason = null;
+        if (ipError) {
+          txnStatus = "ERROR";
+          errorReason = ipError;
+        } else if (txnStatus === "ERROR") {
+          errorReason = "Payment mismatch";
+        }
+
         if (existing) {
           incomeTxn = await prisma.incomeTxn.update({
             where: { id: existing.id },
             data: withIncomeTxnStatusData({
               patientId,
               billDate: toDateOnly(billDate),
+              ipId,
               grossAmount: amount,
               discountAmount: discAmt,
               billAmt,
-              errorReason: txnStatus === "ERROR" ? "Payment mismatch" : null,
+              errorReason,
             }, pymtStatus, txnStatus),
           });
           await prisma.rcvdPymt.deleteMany({ where: { incomeTxnId: existing.id } });
@@ -254,11 +292,12 @@ const importLabBilling = async (req, res) => {
               patientId,
               billNo,
               billDate: toDateOnly(billDate),
-              ipNo: null,
+              ipId,
               grossAmount: amount,
               discountAmount: discAmt,
               advAdjt: 0,
               billAmt,
+              errorReason,
             }, pymtStatus, txnStatus),
           });
           inserted++;

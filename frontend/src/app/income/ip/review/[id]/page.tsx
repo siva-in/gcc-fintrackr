@@ -88,6 +88,7 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
       paymentDate: string;
       insurancePartnerId: string;
       insurancePartnerName: string;
+      isReceivable: boolean;
     }[]
   >([]);
   const [payableItems, setPayableItems] = useState<PayableItem[]>([]);
@@ -191,63 +192,64 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
     return `/income/ip?${params.toString()}`;
   };
 
-  async function fetchTxnDetails(sourceDoctors = doctorsList, filterConfigs = ipFilterConfigs) {
+  async function fetchTxnDetails(sourceDoctors = doctorsList, filterConfigs = ipFilterConfigs, modes = paymentModes) {
     setLoading(true);
     try {
       const { data } = await api.get(`/income/ip/txns/${id}`);
       setTxn(data);
 
-      if (data.rcvdPymts && data.rcvdPymts.length > 0) {
-        const insuranceReceivables = (data.receivables || []).filter(
-          (r: { arType: string }) => r.arType === "INSURANCE",
-        );
-        const usedInsuranceIds = new Set<number>();
-        const normalizeDate = (d: string | null) => (d ? new Date(d).toISOString().split("T")[0] : "");
+      const modeIdByCode = (code: string) => {
+        const m = modes.find((x) => x.code === code);
+        return m ? String(m.id) : "";
+      };
+      const normalizeDate = (d: string | null) => (d ? new Date(d).toISOString().split("T")[0] : "");
 
-        setPymts(
-          data.rcvdPymts.map(
-            (p: {
-              paymentModeId: number | null;
-              amount: number | null;
-              paymentDate: string | null;
-              paymentMode?: { code?: string } | null;
-            }) => {
-              let insurancePartnerId = "";
-              let insurancePartnerName = "";
-              if (p.paymentMode?.code === "INSURANCE") {
-                const paymentDate = normalizeDate(p.paymentDate);
-                const amount = Number(p.amount || 0);
-                const matched =
-                  insuranceReceivables.find(
-                    (r: {
-                      id: number;
-                      dueAmt: number;
-                      dueDate: string | null;
-                      bizPartner: { id: number; bpName: string } | null;
-                    }) =>
-                      !usedInsuranceIds.has(r.id) &&
-                      Math.abs(Number(r.dueAmt || 0) - amount) <= 0.01 &&
-                      normalizeDate(r.dueDate) === paymentDate,
-                  ) || insuranceReceivables.find((r: { id: number }) => !usedInsuranceIds.has(r.id));
-                if (matched) {
-                  usedInsuranceIds.add(matched.id);
-                  insurancePartnerId = matched.bizPartner?.id ? String(matched.bizPartner.id) : "";
-                  insurancePartnerName = matched.bizPartner?.bpName || "";
-                }
-              }
-              return {
-                paymentModeId: p.paymentModeId ? String(p.paymentModeId) : "",
-                amount: p.amount != null ? String(p.amount) : "",
-                paymentDate: p.paymentDate ? new Date(p.paymentDate).toISOString().split("T")[0] : "",
-                insurancePartnerId,
-                insurancePartnerName,
-              };
-            },
-          ),
-        );
+      const rows: {
+        paymentModeId: string;
+        amount: string;
+        paymentDate: string;
+        insurancePartnerId: string;
+        insurancePartnerName: string;
+        isReceivable: boolean;
+      }[] = [];
+
+      (data.rcvdPymts || []).forEach(
+        (p: { paymentModeId: number | null; amount: number | null; paymentDate: string | null }) => {
+          rows.push({
+            paymentModeId: p.paymentModeId ? String(p.paymentModeId) : "",
+            amount: p.amount != null ? String(p.amount) : "",
+            paymentDate: normalizeDate(p.paymentDate),
+            insurancePartnerId: "",
+            insurancePartnerName: "",
+            isReceivable: false,
+          });
+        },
+      );
+
+      (data.receivables || []).forEach(
+        (r: {
+          arType: string;
+          dueAmt: number;
+          dueDate: string | null;
+          bizPartner: { id: number; bpName: string } | null;
+        }) => {
+          const modeCode = r.arType === "INSURANCE" ? "INSURANCE" : r.arType === "CORPORATE" ? "COMPANY" : "CREDIT";
+          rows.push({
+            paymentModeId: modeIdByCode(modeCode),
+            amount: r.dueAmt != null ? String(r.dueAmt) : "",
+            paymentDate: normalizeDate(r.dueDate),
+            insurancePartnerId: r.arType === "INSURANCE" && r.bizPartner ? String(r.bizPartner.id) : "",
+            insurancePartnerName: r.arType === "INSURANCE" ? r.bizPartner?.bpName || "" : "",
+            isReceivable: true,
+          });
+        },
+      );
+
+      if (rows.length > 0) {
+        setPymts(rows);
       } else {
         setPymts([
-          { paymentModeId: "", amount: "", paymentDate: "", insurancePartnerId: "", insurancePartnerName: "" },
+          { paymentModeId: "", amount: "", paymentDate: "", insurancePartnerId: "", insurancePartnerName: "", isReceivable: false },
         ]);
       }
 
@@ -377,9 +379,11 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
     try {
       const { data } = await api.get("/income/ip/payment-modes");
       setPaymentModes(data);
+      return data;
     } catch {
       /* ignore */
     }
+    return [];
   }
 
   async function fetchInsurancePartners() {
@@ -416,8 +420,9 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
       const doctors = await fetchDoctorsList();
       const configs = await fetchIpFilterConfigs();
       await fetchVendorsList();
-      await Promise.all([fetchPaymentModes(), fetchInsurancePartners(), fetchReferralPartners()]);
-      await fetchTxnDetails(doctors, configs);
+      const modes = await fetchPaymentModes();
+      await Promise.all([fetchInsurancePartners(), fetchReferralPartners()]);
+      await fetchTxnDetails(doctors, configs, modes);
     };
     init();
   }, [id]);
@@ -440,7 +445,7 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
   const addPaymentRow = () => {
     setPymts([
       ...pymts,
-      { paymentModeId: "", amount: "", paymentDate: "", insurancePartnerId: "", insurancePartnerName: "" },
+      { paymentModeId: "", amount: "", paymentDate: "", insurancePartnerId: "", insurancePartnerName: "", isReceivable: false },
     ]);
   };
 
@@ -450,7 +455,7 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
 
   const updatePaymentRow = (index: number, field: string, value: string) => {
     const updated = [...pymts];
-    (updated[index] as Record<string, string>)[field] = value;
+    (updated[index] as Record<string, string | boolean>)[field] = value;
     setPymts(updated);
   };
 
@@ -536,6 +541,17 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
 
     if (Math.abs(totalPaymentAmt - netAmt) > 0.01) {
       return toast.error("Total payments must equal Net Amount");
+    }
+
+    const hasUnknownInsurance = pymts.some(
+      (p) =>
+        p.amount &&
+        parseFloat(p.amount) > 0 &&
+        getModeCodeById(p.paymentModeId) === "INSURANCE" &&
+        p.insurancePartnerName.trim().toLowerCase() === "unknown",
+    );
+    if (hasUnknownInsurance) {
+      return toast.error("Select an actual insurance company instead of UNKNOWN");
     }
 
     const refAmt = parseFloat(referralAmt) || 0;
@@ -777,7 +793,12 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
             </div>
             <div className="space-y-3">
               {pymts.map((pmt, idx) => (
-                <div key={idx} className="flex gap-3 items-end p-3 bg-slate-50 rounded-xl">
+                <div
+                  key={idx}
+                  className={`flex gap-3 items-end p-3 rounded-xl ${
+                    pmt.isReceivable ? "bg-red-50 border border-red-200" : "bg-emerald-50 border border-emerald-200"
+                  }`}
+                >
                   <div className="flex-1">
                     <label className="block text-xs font-medium text-slate-500 mb-1">Payment Mode</label>
                     <select
@@ -811,9 +832,9 @@ function ReviewPageContent({ params }: { params: Promise<{ id: string }> }) {
                   </div>
                   <div className="flex-1">
                     <label className="block text-xs font-medium text-slate-500 mb-1">
-                      {["INSURANCE", "CREDIT"].includes(getModeCodeById(pmt.paymentModeId))
+                      {["INSURANCE", "CREDIT", "COMPANY"].includes(getModeCodeById(pmt.paymentModeId))
                         ? "Payment Due Date"
-                        : "Payment Date"}
+                        : "Paid Date"}
                     </label>
                     <input
                       type="date"

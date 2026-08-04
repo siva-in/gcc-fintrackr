@@ -6,8 +6,9 @@ import api from "@/lib/api";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import toast from "react-hot-toast";
-import { Upload, Search, X, Banknote, CreditCard, Wallet, TrendingUp, List, LayoutDashboard, FileText, AlertTriangle, CheckCircle, CircleDollarSign } from "lucide-react";
+import { Upload, Search, X, Wallet, TrendingUp, List, LayoutDashboard, FileText, AlertTriangle, CheckCircle, ChevronRight } from "lucide-react";
 import Pagination from "@/components/ui/Pagination";
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 
 interface Dashboard {
   unrealised: number;
@@ -15,8 +16,18 @@ interface Dashboard {
   cash: number;
   bank: number;
   card: number;
+  paymentModes: { code: string; name: string; total: number }[];
   total: number;
 }
+
+const MODE_COLORS: Record<string, string> = {
+  CASH: "#10b981",
+  BANK: "#3b82f6",
+  UPI: "#8b5cf6",
+  CARD: "#f59e0b",
+  CHEQUE: "#ef4444",
+  NEFT: "#64748b",
+};
 
 interface AdvTxn {
   id: number;
@@ -31,6 +42,7 @@ interface AdvTxn {
   ipAdm?: { id: number; ipNo: string } | null;
   rcvdPymts: { id: number; amount: number | null; paymentDate: string | null; paymentMode: { code: string; name: string } | null }[];
   incomeSource: { code: string; name: string } | null;
+  realisedByTxn?: { billNo: string; billDate: string } | null;
 }
 
 interface ImportLogEntry {
@@ -82,7 +94,7 @@ export default function IncomeAdvancePage() {
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth() + 1;
   const [activeTab, setActiveTab] = useState<"dashboard" | "transactions" | "importlog">("dashboard");
-  const [dashboard, setDashboard] = useState<Dashboard>({ unrealised: 0, realised: 0, cash: 0, bank: 0, card: 0, total: 0 });
+  const [dashboard, setDashboard] = useState<Dashboard>({ unrealised: 0, realised: 0, cash: 0, bank: 0, card: 0, paymentModes: [], total: 0 });
   const [dashYear, setDashYear] = useState(currentYear);
   const [dashMonth, setDashMonth] = useState(currentMonth);
   const [dashFromDate, setDashFromDate] = useState(() => getMonthRange(currentYear, currentMonth).from);
@@ -342,72 +354,112 @@ export default function IncomeAdvancePage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
-              <button onClick={() => handleCardClick("UNREALISED")} className="bg-white rounded-2xl border border-slate-200/60 p-5 hover:border-amber-300 hover:shadow-md transition-all text-left">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center">
-                    <Wallet size={20} className="text-amber-500" />
-                  </div>
-                </div>
-                <p className="text-sm text-slate-400">Unrealised</p>
-                <p className="text-xl font-bold text-slate-800">{formatCurrency(dashboard.unrealised)}</p>
-                <p className="text-xs text-slate-400 mt-1">Click to view details</p>
-              </button>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="lg:col-span-2 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <button onClick={() => handleCardClick("UNREALISED")} className="bg-white rounded-2xl border border-slate-200/60 p-4 hover:border-amber-300 hover:shadow-md transition-all text-left">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-medium text-slate-400">Unrealised</p>
+                        <p className="text-xl font-bold text-amber-600 mt-1">{formatCurrency(dashboard.unrealised)}</p>
+                      </div>
+                      <div className="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center">
+                        <Wallet size={18} className="text-amber-500" />
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-2">Click to view details</p>
+                  </button>
 
-              <button onClick={() => handleCardClick("REALISED")} className="bg-white rounded-2xl border border-slate-200/60 p-5 hover:border-emerald-300 hover:shadow-md transition-all text-left">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center">
-                    <CheckCircle size={20} className="text-emerald-500" />
-                  </div>
-                </div>
-                <p className="text-sm text-slate-400">Realised</p>
-                <p className="text-xl font-bold text-slate-800">{formatCurrency(dashboard.realised)}</p>
-                <p className="text-xs text-slate-400 mt-1">Click to view details</p>
-              </button>
+                  <button onClick={() => handleCardClick("REALISED")} className="bg-white rounded-2xl border border-slate-200/60 p-4 hover:border-emerald-300 hover:shadow-md transition-all text-left">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-medium text-slate-400">Realised</p>
+                        <p className="text-xl font-bold text-emerald-600 mt-1">{formatCurrency(dashboard.realised)}</p>
+                      </div>
+                      <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center">
+                        <CheckCircle size={18} className="text-emerald-500" />
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-2">Click to view details</p>
+                  </button>
 
-              <button onClick={() => handleCardClick()} className="bg-white rounded-2xl border border-slate-200/60 p-5 hover:border-indigo-300 hover:shadow-md transition-all text-left">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center">
-                    <TrendingUp size={20} className="text-indigo-500" />
-                  </div>
+                  <button onClick={() => handleCardClick()} className="bg-white rounded-2xl border border-slate-200/60 p-4 hover:border-indigo-300 hover:shadow-md transition-all text-left">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-medium text-slate-400">Total Advance</p>
+                        <p className="text-xl font-bold text-indigo-600 mt-1">{formatCurrency(dashboard.total)}</p>
+                      </div>
+                      <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center">
+                        <TrendingUp size={18} className="text-indigo-500" />
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-2">Click to view details</p>
+                  </button>
                 </div>
-                <p className="text-sm text-slate-400">Total Advance</p>
-                <p className="text-xl font-bold text-slate-800">{formatCurrency(dashboard.total)}</p>
-                <p className="text-xs text-slate-400 mt-1">Click to view details</p>
-              </button>
 
-              <button onClick={() => handleCardClick(undefined, "CASH")} className="bg-white rounded-2xl border border-slate-200/60 p-5 hover:border-emerald-300 hover:shadow-md transition-all text-left">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center">
-                    <Banknote size={20} className="text-emerald-500" />
-                  </div>
+                <div className="bg-white rounded-2xl border border-slate-200/60 p-5">
+                  <h3 className="text-sm font-semibold text-slate-600 mb-4">Payment Mode Breakdown</h3>
+                  {dashboard.paymentModes.length === 0 ? (
+                    <p className="text-center text-slate-400 py-6">No payment data for the selected period</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {dashboard.paymentModes.map((m) => {
+                        const pct = dashboard.total > 0 ? Math.round((m.total / dashboard.total) * 100) : 0;
+                        return (
+                          <button key={m.code} onClick={() => handleCardClick(undefined, m.code)} className="w-full text-left group">
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="flex items-center gap-2 text-slate-700 font-medium">
+                                <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: MODE_COLORS[m.code] || "#94a3b8" }} />
+                                {m.name}
+                              </span>
+                              <span className="flex items-center gap-3">
+                                <span className="text-xs text-slate-400">{pct}%</span>
+                                <span className="font-semibold text-slate-800">{formatCurrency(m.total)}</span>
+                                <ChevronRight size={14} className="text-slate-300 group-hover:text-indigo-500 transition-colors" />
+                              </span>
+                            </div>
+                            <div className="mt-1.5 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                              <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: MODE_COLORS[m.code] || "#94a3b8" }} />
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-                <p className="text-sm text-slate-400">Cash</p>
-                <p className="text-xl font-bold text-slate-800">{formatCurrency(dashboard.cash)}</p>
-                <p className="text-xs text-slate-400 mt-1">Click to view details</p>
-              </button>
+              </div>
 
-              <button onClick={() => handleCardClick(undefined, "BANK")} className="bg-white rounded-2xl border border-slate-200/60 p-5 hover:border-blue-300 hover:shadow-md transition-all text-left">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center">
-                    <CreditCard size={20} className="text-blue-500" />
+              <div className="bg-white rounded-2xl border border-slate-200/60 p-5 flex flex-col">
+                <h3 className="text-sm font-semibold text-slate-600 mb-2">Payment Mode Distribution</h3>
+                {dashboard.paymentModes.length === 0 ? (
+                  <p className="text-center text-slate-400 py-10">No payment data</p>
+                ) : (
+                  <div className="h-56 flex-1">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={dashboard.paymentModes}
+                          dataKey="total"
+                          nameKey="code"
+                          cx="50%"
+                          cy="50%"
+                          outerRadius={80}
+                          onClick={(data) => {
+                            const code = (data as { payload?: { code?: string } }).payload?.code;
+                            if (code) handleCardClick(undefined, code);
+                          }}
+                          className="cursor-pointer"
+                        >
+                          {dashboard.paymentModes.map((m) => (
+                            <Cell key={m.code} fill={MODE_COLORS[m.code] || "#94a3b8"} />
+                          ))}
+                        </Pie>
+                        <Tooltip formatter={(value) => formatCurrency(Number(value))} />
+                      </PieChart>
+                    </ResponsiveContainer>
                   </div>
-                </div>
-                <p className="text-sm text-slate-400">Bank</p>
-                <p className="text-xl font-bold text-slate-800">{formatCurrency(dashboard.bank)}</p>
-                <p className="text-xs text-slate-400 mt-1">Click to view details</p>
-              </button>
-
-              <button onClick={() => handleCardClick(undefined, "CARD")} className="bg-white rounded-2xl border border-slate-200/60 p-5 hover:border-purple-300 hover:shadow-md transition-all text-left">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 bg-purple-50 rounded-xl flex items-center justify-center">
-                    <CircleDollarSign size={20} className="text-purple-500" />
-                  </div>
-                </div>
-                <p className="text-sm text-slate-400">Card</p>
-                <p className="text-xl font-bold text-slate-800">{formatCurrency(dashboard.card)}</p>
-                <p className="text-xs text-slate-400 mt-1">Click to view details</p>
-              </button>
+                )}
+              </div>
             </div>
           </>
         )}
@@ -449,18 +501,19 @@ export default function IncomeAdvancePage() {
                       <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden md:table-cell">IP No</th>
                       <th className="text-right px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Amount</th>
                       <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Payment</th>
+                      <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden lg:table-cell">Realised Bill</th>
                       <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Status</th>
                     </tr>
                   </thead>
                   <tbody>
                     {!loading && !hasSearched && txns.length === 0 && (
-                      <tr><td colSpan={6} className="text-center text-slate-400 py-12">Use the search or date filter to view transactions</td></tr>
+                      <tr><td colSpan={7} className="text-center text-slate-400 py-12">Use the search or date filter to view transactions</td></tr>
                     )}
                     {loading && (
-                      <tr><td colSpan={6} className="text-center py-12"><div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin mx-auto" /></td></tr>
+                      <tr><td colSpan={7} className="text-center py-12"><div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin mx-auto" /></td></tr>
                     )}
                     {!loading && hasSearched && txns.length === 0 && (
-                      <tr><td colSpan={6} className="text-center text-slate-400 py-12">No transactions found</td></tr>
+                      <tr><td colSpan={7} className="text-center text-slate-400 py-12">No transactions found</td></tr>
                     )}
                     {!loading && txns.map((txn) => {
                       const isUnrealised = txn.pymt_status === "UNREALISED";
@@ -478,6 +531,14 @@ export default function IncomeAdvancePage() {
                                 </span>
                               )) : <span className="text-xs text-slate-400">-</span>}
                             </div>
+                          </td>
+                          <td className="px-5 py-3.5 hidden lg:table-cell">
+                            {txn.realisedByTxn ? (
+                              <div>
+                                <span className="text-xs font-medium text-emerald-700">{txn.realisedByTxn.billNo}</span>
+                                <span className="block text-xs text-slate-400">{formatDate(txn.realisedByTxn.billDate)}</span>
+                              </div>
+                            ) : <span className="text-xs text-slate-400">-</span>}
                           </td>
                           <td className="px-5 py-3.5">
                             <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium ${txn.pymt_status === "UNREALISED" ? "bg-amber-50 text-amber-600" : "bg-emerald-50 text-emerald-600"}`}>
