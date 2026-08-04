@@ -210,13 +210,6 @@ function IncomeIPPageContent() {
     }
   }, [dashFromDate, dashToDate]);
 
-  const fetchPaymentModes = async () => {
-    try {
-      const { data } = await api.get("/income/ip/payment-modes");
-      setPaymentModes(data);
-    } catch { /* ignore */ }
-  };
-
   const fetchDoctorSummary = useCallback(async (fd = dashFromDate, td = dashToDate) => {
     setDoctorSummaryLoading(true);
     try {

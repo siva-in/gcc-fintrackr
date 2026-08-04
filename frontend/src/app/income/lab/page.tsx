@@ -6,7 +6,7 @@ import api from "@/lib/api";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import toast from "react-hot-toast";
-import { Download, Search, X, Banknote, CreditCard, Wallet, TrendingUp, AlertTriangle, Eye, EyeOff, CheckCircle } from "lucide-react";
+import { Download, Search, X, AlertTriangle, Eye, EyeOff, CheckCircle } from "lucide-react";
 import Pagination from "@/components/ui/Pagination";
 
 interface Dashboard {
