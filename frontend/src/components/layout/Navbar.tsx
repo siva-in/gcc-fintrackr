@@ -4,7 +4,6 @@ import { useAuthStore } from "@/stores/authStore";
 import { useRouter } from "next/navigation";
 import { LogOut, Menu, ChevronDown } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
-import Image from "next/image";
 
 interface NavbarProps {
   onMenuClick: () => void;
@@ -44,8 +43,6 @@ export default function Navbar({ onMenuClick }: NavbarProps) {
       <button onClick={onMenuClick} className="lg:hidden p-2 hover:bg-slate-100 rounded-xl mr-2 text-slate-500">
         <Menu size={20} />
       </button>
-
-      <Image src="/gcclogo.png" alt="Logo" width={180} height={72} className="h-14 sm:h-16 md:h-[72px] w-auto object-contain" priority />
 
       <div className="flex-1" />
 

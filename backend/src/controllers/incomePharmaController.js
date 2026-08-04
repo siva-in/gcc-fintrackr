@@ -152,11 +152,19 @@ const importPharmaBilling = async (req, res) => {
         // Patient lookup: only when Customer starts with GCCH
         let patientId = null;
         const customer = cleanValue(row[headerIdx["Customer"]]);
+        const excelPatientName = cleanValue(row[headerIdx["Patient_name"]]);
         if (customer && customer.toUpperCase().startsWith("GCCH")) {
           const uhid = customer.split("-")[0].trim();
           const patient = await prisma.patient.findFirst({ where: { uhid } });
-          if (patient) patientId = patient.id;
+          if (patient) {
+            patientId = patient.id;
+          } else {
+            failed++;
+            errors.push({ rowNumber: rowNum, rowData, reason: `Patient not found for UHID ${uhid}` });
+            continue;
+          }
         }
+        const paidBy = patientId ? "SELF" : (excelPatientName || "SELF");
 
         // IPAdm association
         let ipId = null;
@@ -271,7 +279,7 @@ const importPharmaBilling = async (req, res) => {
                 paymentModeId: modeMap["CASH"] || null,
                 amount: billAmt,
                 paymentDate: toDateOnly(billDate),
-                paidBy: "SELF",
+                paidBy,
                 remarks: paymentModeRaw || null,
               },
             });
@@ -282,7 +290,7 @@ const importPharmaBilling = async (req, res) => {
                 paymentModeId: modeMap["BANK"] || null,
                 amount: billAmt,
                 paymentDate: toDateOnly(billDate),
-                paidBy: "SELF",
+                paidBy,
                 remarks: paymentModeRaw || null,
               },
             });

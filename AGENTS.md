@@ -442,6 +442,7 @@ When proposing a schema change, the agent **must** advise whether the user needs
 ## 12. Build & Development Notes
 
 - When running `npm run build` to verify changes, do **not** delete the `.next` folder unless the build fails with a stale cache error. Use `npm run build` directly — Next.js handles incremental builds efficiently.
+- **Do not run `npm run build` for every frontend change.** Only run it when the change is non-trivial (new pages/routes, dependency changes, type-structure changes) or when the user explicitly asks. For routine component/UI edits, skip the full build to save time.
 
 ## 13. Component Reuse
 

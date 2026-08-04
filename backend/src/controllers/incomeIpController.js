@@ -341,10 +341,17 @@ const importIPBilling = async (req, res) => {
               data: { pymt_status: "REALISED", realisedTxnId: incomeTxn.id },
             });
           } else {
-            await prisma.incomeTxn.update({
-              where: { id: incomeTxn.id },
-              data: { txn_status: "ERROR", errorReason: `Advance mismatch: expected ${lessAdvance}, found ${advSum}` },
+            // Idempotent re-import: advances already realised against this same IP bill are fine
+            const alreadyRealised = await prisma.incomeTxn.findMany({
+              where: { ipId, incomeSourceId: advSource.id, pymt_status: "REALISED", realisedTxnId: incomeTxn.id },
             });
+            const realisedSum = alreadyRealised.reduce((sum, t) => sum + (parseFloat(String(t.billAmt)) || 0), 0);
+            if (Math.abs(realisedSum - lessAdvance) >= 0.01) {
+              await prisma.incomeTxn.update({
+                where: { id: incomeTxn.id },
+                data: { txn_status: "ERROR", errorReason: `Advance mismatch: expected ${lessAdvance}, found ${advSum}` },
+              });
+            }
           }
         }
       } catch (err) {

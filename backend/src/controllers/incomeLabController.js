@@ -368,7 +368,7 @@ const getLabDashboard = async (req, res) => {
   try {
     const { fromDate, toDate } = req.query;
     const labSource = await prisma.incomeSource.findFirst({ where: { code: "LAB" } });
-    if (!labSource) return res.json({ cash: 0, bank: 0, credit: 0, total: 0, doctorFeeLiability: 0 });
+    if (!labSource) return res.json({ cash: 0, bank: 0, credit: 0, total: 0 });
 
     const where = { incomeSourceId: labSource.id };
     if (fromDate || toDate) {
@@ -377,7 +377,10 @@ const getLabDashboard = async (req, res) => {
       if (toDate) where.billDate.lte = new Date(`${toDate}T23:59:59.999Z`);
     }
 
-    const txns = await prisma.incomeTxn.findMany({ where, include: { rcvdPymts: { include: { paymentMode: true } } } });
+    const txns = await prisma.incomeTxn.findMany({
+      where,
+      include: { rcvdPymts: { include: { paymentMode: true } }, receivables: true },
+    });
 
     let cash = 0, bank = 0, credit = 0;
     for (const txn of txns) {
@@ -388,18 +391,12 @@ const getLabDashboard = async (req, res) => {
         else if (["BANK", "CARD", "UPI"].includes(code)) bank += amt;
         else if (code === "CREDIT") credit += amt;
       }
+      for (const rec of txn.receivables) {
+        credit += parseFloat(String(rec.dueAmt)) || 0;
+      }
     }
 
-    const payableWhere = { incomeTxn: { incomeSourceId: labSource.id }, status: "PENDING" };
-    if (fromDate || toDate) {
-      payableWhere.billDate = {};
-      if (fromDate) payableWhere.billDate.gte = new Date(`${fromDate}T00:00:00.000Z`);
-      if (toDate) payableWhere.billDate.lte = new Date(`${toDate}T23:59:59.999Z`);
-    }
-    const liability = await prisma.payable.aggregate({ where: payableWhere, _sum: { balanceAmt: true } });
-    const doctorFeeLiability = parseFloat(String(liability._sum.balanceAmt)) || 0;
-
-    res.json({ cash, bank, credit, total: cash + bank + credit, doctorFeeLiability });
+    res.json({ cash, bank, credit, total: cash + bank + credit });
   } catch (error) {
     console.error("GetLabDashboard error:", error);
     res.status(500).json({ message: "Internal server error" });
@@ -435,7 +432,15 @@ const getLabTxns = async (req, res) => {
 
     if (paymentMode) {
       const modes = paymentMode.split(",").map((m) => m.trim().toUpperCase());
-      andConditions.push({ rcvdPymts: { some: { paymentMode: { code: { in: modes } } } } });
+      const arTypes = [];
+      if (modes.includes("CREDIT")) arTypes.push("PATIENT");
+      if (modes.includes("INSURANCE")) arTypes.push("INSURANCE");
+      if (modes.includes("COMPANY")) arTypes.push("CORPORATE");
+      const conditions = [{ rcvdPymts: { some: { paymentMode: { code: { in: modes } } } } }];
+      if (arTypes.length > 0) {
+        conditions.push({ receivables: { some: { arType: { in: arTypes } } } });
+      }
+      andConditions.push({ OR: conditions });
     }
 
     if (doctorId) {
@@ -535,127 +540,6 @@ const updateLabTxnError = async (req, res) => {
     res.json(updated);
   } catch (error) {
     console.error("UpdateLabTxnError error:", error);
-    res.status(500).json({ message: "Internal server error" });
-  }
-};
-
-const getLabDoctorSummary = async (req, res) => {
-  try {
-    const { fromDate, toDate } = req.query;
-    const labSource = await prisma.incomeSource.findFirst({ where: { code: "LAB" } });
-    if (!labSource) return res.json({ summary: [], grandTotal: 0 });
-
-    const where = { status: "PENDING", incomeTxn: { incomeSourceId: labSource.id } };
-    if (fromDate || toDate) {
-      where.billDate = {};
-      if (fromDate) where.billDate.gte = new Date(`${fromDate}T00:00:00.000Z`);
-      if (toDate) where.billDate.lte = new Date(`${toDate}T23:59:59.999Z`);
-    }
-
-    const payables = await prisma.payable.findMany({
-      where,
-      select: { drId: true, balanceAmt: true, incomeTxn: { select: { patient: { select: { name: true } } } } },
-    });
-
-    const doctorTotals = {};
-    for (const p of payables) {
-      if (!p.drId) continue;
-      if (!doctorTotals[p.drId]) doctorTotals[p.drId] = { count: 0, total: 0, patients: [] };
-      doctorTotals[p.drId].count++;
-      doctorTotals[p.drId].total += parseFloat(String(p.balanceAmt)) || 0;
-      const name = p.incomeTxn?.patient?.name;
-      if (name && !doctorTotals[p.drId].patients.includes(name)) doctorTotals[p.drId].patients.push(name);
-    }
-
-    const doctorIds = Object.keys(doctorTotals).map(Number);
-    const doctors = doctorIds.length > 0 ? await prisma.doctor.findMany({ where: { id: { in: doctorIds } }, select: { id: true, name: true, descName: true } }) : [];
-    const doctorMap = {};
-    doctors.forEach((d) => { doctorMap[d.id] = d; });
-
-    const summary = doctorIds.map((id) => ({
-      doctor: doctorMap[id] || { id, name: "Unknown", descName: "Unknown" },
-      pendingCount: doctorTotals[id].count,
-      pendingAmount: doctorTotals[id].total,
-      patients: doctorTotals[id].patients,
-    })).sort((a, b) => b.pendingAmount - a.pendingAmount);
-
-    const grandTotal = summary.reduce((sum, s) => sum + s.pendingAmount, 0);
-
-    res.json({ summary, grandTotal });
-  } catch (error) {
-    console.error("GetLabDoctorSummary error:", error);
-    res.status(500).json({ message: "Internal server error" });
-  }
-};
-
-const getLabDoctorPayables = async (req, res) => {
-  try {
-    const { doctorId } = req.query;
-    if (!doctorId) return res.status(400).json({ message: "doctorId is required" });
-
-    const labSource = await prisma.incomeSource.findFirst({ where: { code: "LAB" } });
-
-    const payables = await prisma.payable.findMany({
-      where: { drId: parseInt(doctorId), status: { in: ["PENDING", "PARTIALLY_PAID"] }, incomeTxn: { incomeSourceId: labSource?.id } },
-      orderBy: { billDate: "desc" },
-      include: {
-        incomeTxn: { select: { id: true, billNo: true, patient: { select: { id: true, name: true, uhid: true } } } },
-        pymts: { include: { paymentMode: true } },
-      },
-    });
-
-    const doctor = await prisma.doctor.findUnique({ where: { id: parseInt(doctorId) }, select: { id: true, name: true, descName: true } });
-
-    const enriched = payables.map((p) => {
-      const paidTotal = p.pymts.reduce((sum, py) => sum + (parseFloat(String(py.amount)) || 0), 0);
-      return { ...p, paidTotal, doctor };
-    });
-
-    const grandTotal = enriched.reduce((sum, p) => sum + (parseFloat(String(p.balanceAmt)) || 0), 0);
-
-    res.json({ payables: enriched, grandTotal });
-  } catch (error) {
-    console.error("GetLabDoctorPayables error:", error);
-    res.status(500).json({ message: "Internal server error" });
-  }
-};
-
-const recordLabPayablePayment = async (req, res) => {
-  try {
-    const { payableId, amount, paymentModeId, paymentDate, transactionNo, bankName, paidBy, remarks } = req.body;
-
-    if (!payableId || !amount) return res.status(400).json({ message: "payableId and amount are required" });
-
-    const payable = await prisma.payable.findUnique({ where: { id: parseInt(payableId) } });
-    if (!payable) return res.status(404).json({ message: "Payable not found" });
-
-    const payAmt = parseFloat(String(amount));
-    if (payAmt <= 0) return res.status(400).json({ message: "Amount must be greater than zero" });
-
-    const balance = parseFloat(String(payable.balanceAmt));
-    if (payAmt > balance) return res.status(400).json({ message: `Amount exceeds balance of ${balance}` });
-
-    const pymt = await prisma.payablePymt.create({
-      data: {
-        payableId: parseInt(payableId),
-        amount: payAmt,
-        paymentModeId: paymentModeId ? parseInt(paymentModeId) : null,
-        paymentDate: paymentDate ? toDateOnly(paymentDate) : null,
-        transactionNo: transactionNo || null,
-        bankName: bankName || null,
-        paidBy: paidBy || null,
-        remarks: remarks || null,
-      },
-    });
-
-    const newBalance = balance - payAmt;
-    const newStatus = newBalance <= 0 ? "PAID" : "PARTIALLY_PAID";
-
-    await prisma.payable.update({ where: { id: parseInt(payableId) }, data: { balanceAmt: newBalance, status: newStatus } });
-
-    res.json({ payment: pymt, newBalance, newStatus });
-  } catch (error) {
-    console.error("RecordLabPayablePayment error:", error);
     res.status(500).json({ message: "Internal server error" });
   }
 };
@@ -831,7 +715,6 @@ const bulkVerifyLabTxns = async (req, res) => {
 
 module.exports = {
   importLabBilling, getLabDashboard, getLabTxns, getLabTxnDetail, updateLabTxnError,
-  getLabDoctorSummary, getLabDoctorPayables, recordLabPayablePayment,
   getLabImportLogs, getLabImportErrors, getLabPaymentModes, updateLabPayments,
   bulkVerifyLabTxns,
 };

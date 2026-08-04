@@ -345,6 +345,7 @@ const getAdvTxns = async (req, res) => {
         include: {
           incomeSource: { select: { code: true, name: true } },
           ipAdm: { select: { id: true, ipNo: true } },
+          patient: { select: { id: true, name: true, uhid: true } },
           rcvdPymts: { include: { paymentMode: true } },
           realisedByTxn: { select: { billNo: true, billDate: true } },
         },

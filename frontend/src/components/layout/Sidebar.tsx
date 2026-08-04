@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useAuthStore } from "@/stores/authStore";
 import { useState } from "react";
@@ -91,25 +92,40 @@ export default function Sidebar({ isOpen, collapsed, onClose, onToggleCollapse }
         `}
       >
         <div
-          className={`flex items-center h-16 px-4 border-b border-white/10 shrink-0 ${collapsed ? "justify-center" : "justify-between"}`}
+          className={`flex items-center h-16 sm:h-18 border-b border-white/10 shrink-0 ${collapsed ? "justify-center px-2" : "justify-between px-4"}`}
         >
-          <Link href="/dashboard" className="flex items-center gap-2.5 min-w-0">
-            {!collapsed && <span className="text-lg font-bold text-white tracking-tight">FinTrackr</span>}
-          </Link>
-          <div className="flex items-center">
-            <button
-              onClick={onClose}
-              className="lg:hidden p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg"
-            >
-              <X size={18} />
+          {collapsed ? (
+            <button onClick={onToggleCollapse} title="Expand" className="flex items-center justify-center min-w-0">
+              <Image src="/globe-white.png" alt="GCC" width={191} height={200} className="h-12 w-12 object-contain" />
             </button>
-            <button
-              onClick={onToggleCollapse}
-              className="hidden lg:flex p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg"
-            >
-              <ChevronLeft size={18} className={`transition-transform duration-300 ${collapsed ? "rotate-180" : ""}`} />
-            </button>
-          </div>
+          ) : (
+            <Link href="/dashboard" className="flex items-center justify-center min-w-0">
+              <Image
+                src="/logo-white.png"
+                alt="GCC Logo"
+                width={1510}
+                height={512}
+                className="h-12 sm:h-15 w-auto object-contain"
+              />
+            </Link>
+          )}
+          {!collapsed && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={onClose}
+                className="lg:hidden p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg"
+              >
+                <X size={18} />
+              </button>
+              <button
+                onClick={onToggleCollapse}
+                className="hidden lg:flex p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg"
+                title="Collapse"
+              >
+                <ChevronLeft size={18} />
+              </button>
+            </div>
+          )}
         </div>
 
         {!collapsed && (
@@ -199,11 +215,25 @@ export default function Sidebar({ isOpen, collapsed, onClose, onToggleCollapse }
           </div>
         </nav>
 
-        {!collapsed && (
-          <div className="px-4 py-3 border-t border-white/5">
-            <p className="text-[11px] text-slate-500 text-center">FinTrackr v1.0</p>
-          </div>
-        )}
+        <div className="px-2 py-3 border-t border-white/5 flex flex-col items-center gap-2">
+          {collapsed && (
+            <button
+              onClick={onToggleCollapse}
+              className="hidden lg:flex p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg"
+              title="Expand"
+            >
+              <ChevronLeft size={18} className="rotate-180" />
+            </button>
+          )}
+          {!collapsed && (
+            <div className="text-center">
+              <p className="text-sm font-semibold text-slate-200">FinTrackr</p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Track. Verify. Approve. <span className="text-indigo-400 font-bold"> ~ MRSoft!</span>
+              </p>
+            </div>
+          )}
+        </div>
       </aside>
     </>
   );

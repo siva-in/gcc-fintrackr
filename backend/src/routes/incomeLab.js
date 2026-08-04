@@ -3,7 +3,6 @@ const multer = require("multer");
 const router = express.Router();
 const {
   importLabBilling, getLabDashboard, getLabTxns, getLabTxnDetail, updateLabTxnError,
-  getLabDoctorSummary, getLabDoctorPayables, recordLabPayablePayment,
   getLabImportLogs, getLabImportErrors, getLabPaymentModes, updateLabPayments,
   bulkVerifyLabTxns,
 } = require("../controllers/incomeLabController");
@@ -14,12 +13,9 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 router.use(authenticate, requireCompanyRole());
 
 router.get("/dashboard", getLabDashboard);
-router.get("/doctor-summary", getLabDoctorSummary);
 router.get("/txns", getLabTxns);
 router.get("/txns/:id", getLabTxnDetail);
 router.patch("/txns/:id/error", updateLabTxnError);
-router.get("/doctor-payables", getLabDoctorPayables);
-router.post("/payable-pymts", recordLabPayablePayment);
 router.get("/payment-modes", getLabPaymentModes);
 router.get("/import-logs", getLabImportLogs);
 router.get("/import-logs/:id/errors", getLabImportErrors);

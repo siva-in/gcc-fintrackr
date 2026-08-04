@@ -7,7 +7,7 @@ import api from "@/lib/api";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import toast from "react-hot-toast";
-import { Upload, Search, X, Banknote, CreditCard, Wallet, TrendingUp, List, LayoutDashboard, FileText, AlertTriangle, Clock, CheckCircle2, XCircle, Eye, Stethoscope, AlertCircle, CheckCircle } from "lucide-react";
+import { Download, Search, X, Banknote, CreditCard, Wallet, TrendingUp, List, LayoutDashboard, AlertTriangle, Clock, CheckCircle2, XCircle, Eye, EyeOff, Stethoscope, AlertCircle, CheckCircle } from "lucide-react";
 import Pagination from "@/components/ui/Pagination";
 
 interface Dashboard {
@@ -101,7 +101,8 @@ function IncomeOPPageContent() {
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth() + 1;
-  const [activeTab, setActiveTab] = useState<"dashboard" | "transactions" | "importlog">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "transactions">("dashboard");
+  const [tableView, setTableView] = useState<"transactions" | "logs">("transactions");
   const [dashboard, setDashboard] = useState<Dashboard>({ cash: 0, bank: 0, credit: 0, total: 0, doctorFeeLiability: 0 });
   const [dashYear, setDashYear] = useState(currentYear);
   const [dashMonth, setDashMonth] = useState(currentMonth);
@@ -115,17 +116,10 @@ function IncomeOPPageContent() {
   const [search, setSearch] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-  const [txnDoctorFilter, setTxnDoctorFilter] = useState("");
   const [txnPaymentFilter, setTxnPaymentFilter] = useState("");
   const [txnStatusFilter, setTxnStatusFilter] = useState("");
   const [page, setPage] = useState(1);
   const [hasSearched, setHasSearched] = useState(false);
-
-  const [doctorsList, setDoctorsList] = useState<{ id: number; name: string }[]>([]);
-  const [doctorSearchText, setDoctorSearchText] = useState("");
-  const [doctorDropdownOpen, setDoctorDropdownOpen] = useState(false);
-  const [selectedDoctorName, setSelectedDoctorName] = useState("");
-  const doctorRef = useRef<HTMLDivElement>(null);
 
   const [importLogs, setImportLogs] = useState<ImportLogEntry[]>([]);
   const [logPagination, setLogPagination] = useState({ total: 0, page: 1, pages: 1 });
@@ -191,6 +185,8 @@ function IncomeOPPageContent() {
     const range = getMonthRange(dashYear, dashMonth);
     setDashFromDate(range.from);
     setDashToDate(range.to);
+    setFromDate((prev) => prev || range.from);
+    setToDate((prev) => prev || range.to);
   }, [dashYear, dashMonth]);
 
   const fetchDoctorSummary = useCallback(async (fd = dashFromDate, td = dashToDate) => {
@@ -316,16 +312,9 @@ function IncomeOPPageContent() {
     }
   }, [dashFromDate, dashToDate]);
 
-  async function fetchDoctorsList() {
-    try {
-      const { data } = await api.get("/doctors?limit=9999");
-      setDoctorsList(data.doctors || []);
-    } catch { /* ignore */ }
-  }
+  useEffect(() => { fetchDashboard(); fetchDoctorSummary(); }, [fetchDashboard, fetchDoctorSummary]);
 
-  useEffect(() => { fetchDashboard(); fetchDoctorSummary(); fetchDoctorsList(); }, [fetchDashboard, fetchDoctorSummary]);
-
-  const fetchTxns = async (p = page, s = search, fd = fromDate, td = toDate, pm = txnPaymentFilter, docId = txnDoctorFilter, st = txnStatusFilter) => {
+  const fetchTxns = async (p = page, s = search, fd = fromDate, td = toDate, pm = txnPaymentFilter, st = txnStatusFilter) => {
     setLoading(true);
     try {
       const params = new URLSearchParams({ page: String(p), limit: "10" });
@@ -333,7 +322,6 @@ function IncomeOPPageContent() {
       if (fd) params.set("fromDate", fd);
       if (td) params.set("toDate", td);
       if (pm) params.set("paymentMode", pm);
-      if (docId) params.set("doctorId", docId);
       if (st) params.set("txnStatus", st);
       const { data } = await api.get(`/income/txns?${params.toString()}`);
       setTxns(data.txns);
@@ -361,25 +349,24 @@ function IncomeOPPageContent() {
   };
 
   useEffect(() => {
-    if (activeTab === "importlog") fetchImportLogs();
-  }, [activeTab, logPage]);
+    if (tableView === "logs") fetchImportLogs();
+  }, [tableView, logPage]);
 
   useEffect(() => {
     const saved = sessionStorage.getItem("opFilterState");
     if (saved) {
       sessionStorage.removeItem("opFilterState");
       try {
-        const { page: sp, search: ss, fromDate: sfd, toDate: std, txnPaymentFilter: spf, txnDoctorFilter: sdf, txnStatusFilter: ssf } = JSON.parse(saved);
+        const { page: sp, search: ss, fromDate: sfd, toDate: std, txnPaymentFilter: spf, txnStatusFilter: ssf } = JSON.parse(saved);
         setPage(Number(sp) || 1);
         setSearch(ss || "");
         setFromDate(sfd || "");
         setToDate(std || "");
         setTxnPaymentFilter(spf || "");
-        setTxnDoctorFilter(sdf || "");
         setTxnStatusFilter(ssf || "");
         setActiveTab("transactions");
         setHasSearched(true);
-        fetchTxns(Number(sp) || 1, ss || "", sfd || "", std || "", spf || "", sdf || "", ssf || "");
+        fetchTxns(Number(sp) || 1, ss || "", sfd || "", std || "", spf || "", ssf || "");
         return;
       } catch {}
     }
@@ -388,7 +375,6 @@ function IncomeOPPageContent() {
       const sfd = urlSearchParams.get("fromDate") || "";
       const std = urlSearchParams.get("toDate") || "";
       const spf = urlSearchParams.get("pm") || "";
-      const sdf = urlSearchParams.get("docId") || "";
       const ssf = urlSearchParams.get("txnStatus") || "";
       const sp = urlSearchParams.get("page") || "1";
       const tab = (urlSearchParams.get("tab") || "transactions") as "dashboard" | "transactions" | "importlog";
@@ -397,59 +383,74 @@ function IncomeOPPageContent() {
       setFromDate(sfd);
       setToDate(std);
       setTxnPaymentFilter(spf);
-      setTxnDoctorFilter(sdf);
       setTxnStatusFilter(ssf);
-      setActiveTab(tab);
+      setActiveTab(tab === "importlog" ? "transactions" : tab);
+      if (tab === "importlog") setTableView("logs");
       setHasSearched(true);
-      fetchTxns(Number(sp), ss, sfd, std, spf, sdf, ssf);
+      fetchTxns(Number(sp), ss, sfd, std, spf, ssf);
     }
   }, [urlSearchParams]);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (doctorRef.current && !doctorRef.current.contains(e.target as Node)) {
-        setDoctorDropdownOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
   const handleDashFilter = () => {
     fetchDashboard(dashFromDate, dashToDate);
     fetchDoctorSummary(dashFromDate, dashToDate);
   };
 
+  const handleTxnMonthChange = (month: number) => {
+    setDashMonth(month);
+    const range = getMonthRange(dashYear, month);
+    setDashFromDate(range.from);
+    setDashToDate(range.to);
+    setFromDate(range.from);
+    setToDate(range.to);
+    setPage(1);
+    setHasSearched(true);
+    fetchDashboard(range.from, range.to);
+    fetchTxns(1, search, range.from, range.to, txnPaymentFilter, txnStatusFilter);
+  };
+
+  const handleTxnYearChange = (year: number) => {
+    setDashYear(year);
+    const range = getMonthRange(year, dashMonth);
+    setDashFromDate(range.from);
+    setDashToDate(range.to);
+    setFromDate(range.from);
+    setToDate(range.to);
+    setPage(1);
+    setHasSearched(true);
+    fetchDashboard(range.from, range.to);
+    fetchTxns(1, search, range.from, range.to, txnPaymentFilter, txnStatusFilter);
+  };
+
   const handleSearch = () => {
     setPage(1);
-    fetchTxns(1, search, fromDate, toDate, txnPaymentFilter, txnDoctorFilter, txnStatusFilter);
+    fetchTxns(1, search, fromDate, toDate, txnPaymentFilter, txnStatusFilter);
   };
 
   const handlePageChange = (p: number) => {
     setPage(p);
-    fetchTxns(p, search, fromDate, toDate, txnPaymentFilter, txnDoctorFilter, txnStatusFilter);
+    fetchTxns(p, search, fromDate, toDate, txnPaymentFilter, txnStatusFilter);
   };
 
-  const handleLogPageChange = (p: number) => setLogPage(p);
+  const handleLogPageChange = (p: number) => {
+    setLogPage(p);
+    fetchImportLogs(p);
+  };
 
-  const handleCardClick = (paymentMode?: string, doctorId?: string) => {
+  const handleTableViewChange = (v: "transactions" | "logs") => {
+    setTableView(v);
+    if (v === "logs") fetchImportLogs();
+  };
+
+  const handleCardClick = (paymentMode?: string) => {
     setTxnPaymentFilter(paymentMode || "");
-    setTxnDoctorFilter(doctorId || "");
     setTxnStatusFilter("");
-    if (doctorId) {
-      const doc = doctorsList.find(d => String(d.id) === String(doctorId));
-      setSelectedDoctorName(doc?.name || "");
-      setDoctorSearchText(doc?.name || "");
-    } else {
-      setSelectedDoctorName("");
-      setDoctorSearchText("");
-    }
     setSearch("");
     setFromDate(dashFromDate);
     setToDate(dashToDate);
     setActiveTab("transactions");
     setPage(1);
-    fetchTxns(1, "", dashFromDate, dashToDate, paymentMode || "", doctorId || "", "");
+    fetchTxns(1, "", dashFromDate, dashToDate, paymentMode || "", "");
   };
 
   const openImportModal = (type: "billing" | "detail") => {
@@ -517,7 +518,7 @@ function IncomeOPPageContent() {
       await api.post("/income/txns/bulk-verify", { ids: Array.from(selectedIds) });
       toast.success(`${selectedIds.size} transaction(s) verified`);
       setSelectedIds(new Set());
-      if (hasSearched) fetchTxns(page, search, fromDate, toDate, txnPaymentFilter, txnDoctorFilter, txnStatusFilter);
+      if (hasSearched) fetchTxns(page, search, fromDate, toDate, txnPaymentFilter, txnStatusFilter);
     } catch {
       toast.error("Bulk verify failed");
     } finally {
@@ -556,7 +557,7 @@ function IncomeOPPageContent() {
       toast.success("Record updated successfully");
       setEditModalOpen(false);
       setEditingTxn(null);
-      if (hasSearched) fetchTxns(page, search, fromDate, toDate, txnPaymentFilter, txnDoctorFilter, txnStatusFilter);
+      if (hasSearched) fetchTxns(page, search, fromDate, toDate, txnPaymentFilter, txnStatusFilter);
     } catch {
       toast.error("Failed to update record");
     } finally {
@@ -606,12 +607,6 @@ function IncomeOPPageContent() {
               className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === "transactions" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
             >
               <List size={16} /> Transactions
-            </button>
-            <button
-              onClick={() => setActiveTab("importlog")}
-              className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === "importlog" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-            >
-              <FileText size={16} /> OP Data Import
             </button>
           </div>
 
@@ -708,7 +703,7 @@ function IncomeOPPageContent() {
                   <p className="text-xs text-slate-400 mt-1">Click to view details</p>
                 </button>
                 <button
-                  onClick={() => handleCardClick("", "")}
+                  onClick={() => handleCardClick("")}
                   className="bg-white rounded-2xl border border-slate-200/60 p-5 hover:border-indigo-300 hover:shadow-md transition-all text-left cursor-pointer"
                 >
                   <div className="flex items-center gap-3 mb-3">
@@ -721,7 +716,7 @@ function IncomeOPPageContent() {
                   <p className="text-xs text-slate-400 mt-1">Click to view details</p>
                 </button>
                 <button
-                  onClick={() => handleCardClick("", "")}
+                  onClick={() => handleCardClick("")}
                   className="bg-white rounded-2xl border border-slate-200/60 p-5 hover:border-red-300 hover:shadow-md transition-all text-left cursor-pointer"
                 >
                   <div className="flex items-center gap-3 mb-3">
@@ -803,10 +798,32 @@ function IncomeOPPageContent() {
 
           {activeTab === "transactions" && (
             <>
-              <div className="bg-white rounded-2xl border border-slate-200/60 p-4 mb-6">
-                <div className="flex flex-col sm:flex-row gap-3 items-end">
+              <div className="flex flex-col lg:flex-row gap-4 mb-6">
+                <div className="bg-white rounded-2xl border border-slate-200/60 p-4 flex-1">
+                  <div className="flex flex-col sm:flex-row gap-3 items-end">
+                  <div className="w-full sm:w-auto">
+                    <select
+                      value={dashYear}
+                      onChange={(e) => handleTxnYearChange(parseInt(e.target.value))}
+                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                    >
+                      {getYearOptions().map((y) => (
+                        <option key={y.value} value={y.value}>{y.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="w-full sm:w-auto">
+                    <select
+                      value={dashMonth}
+                      onChange={(e) => handleTxnMonthChange(parseInt(e.target.value))}
+                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                    >
+                      {MONTHS.map((m) => (
+                        <option key={m.value} value={m.value}>{m.label}</option>
+                      ))}
+                    </select>
+                  </div>
                   <div className="flex-1 w-full sm:max-w-xs">
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Search</label>
                     <div className="relative">
                       <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                       <input
@@ -819,75 +836,19 @@ function IncomeOPPageContent() {
                       />
                     </div>
                   </div>
-                  <div className="w-full sm:w-auto relative" ref={doctorRef}>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Doctor</label>
-                    <input
-                      type="text"
-                      placeholder="Search doctor..."
-                      value={doctorSearchText}
-                      onChange={(e) => {
-                        setDoctorSearchText(e.target.value);
-                        setTxnDoctorFilter("");
-                        setSelectedDoctorName("");
-                        setDoctorDropdownOpen(true);
-                      }}
-                      onFocus={() => setDoctorDropdownOpen(true)}
-                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-                    />
-                    {selectedDoctorName && (
-                      <button
-                        onClick={() => {
-                          setSelectedDoctorName("");
-                          setDoctorSearchText("");
-                          setTxnDoctorFilter("");
-                        }}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 mt-2 p-0.5 hover:bg-slate-200 rounded"
-                      >
-                        <X size={14} className="text-slate-400" />
-                      </button>
-                    )}
-                    {doctorDropdownOpen && doctorSearchText && !selectedDoctorName && (
-                      <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
-                        {doctorsList
-                          .filter(d => d.name.toLowerCase().includes(doctorSearchText.toLowerCase()))
-                          .length === 0 ? (
-                          <div className="px-3 py-2 text-xs text-slate-400">No doctors found</div>
-                        ) : (
-                          doctorsList
-                            .filter(d => d.name.toLowerCase().includes(doctorSearchText.toLowerCase()))
-                            .map(d => (
-                              <button
-                                key={d.id}
-                                onClick={() => {
-                                  setSelectedDoctorName(d.name);
-                                  setDoctorSearchText(d.name);
-                                  setTxnDoctorFilter(String(d.id));
-                                  setDoctorDropdownOpen(false);
-                                }}
-                                className="w-full text-left px-3 py-2 text-sm hover:bg-indigo-50 transition-colors"
-                              >
-                                {d.name}
-                              </button>
-                            ))
-                        )}
-                      </div>
-                    )}
-                  </div>
                   <div className="w-full sm:w-auto">
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Payment Mode</label>
                     <select
                       value={txnPaymentFilter}
                       onChange={(e) => setTxnPaymentFilter(e.target.value)}
                       className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
                     >
-                      <option value="">All Modes</option>
+                      <option value="">All Payments</option>
                       <option value="CASH">Cash</option>
                       <option value="BANK,CARD,UPI">Bank / Card / UPI</option>
                       <option value="CREDIT">Credit</option>
                     </select>
                   </div>
                   <div className="w-full sm:w-auto">
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Txn Status</label>
                     <select
                       value={txnStatusFilter}
                       onChange={(e) => setTxnStatusFilter(e.target.value)}
@@ -901,7 +862,6 @@ function IncomeOPPageContent() {
                     </select>
                   </div>
                   <div className="w-full sm:w-auto">
-                    <label className="block text-xs font-medium text-slate-500 mb-1">From Date</label>
                     <input
                       type="date"
                       value={fromDate}
@@ -910,7 +870,6 @@ function IncomeOPPageContent() {
                     />
                   </div>
                   <div className="w-full sm:w-auto">
-                    <label className="block text-xs font-medium text-slate-500 mb-1">To Date</label>
                     <input
                       type="date"
                       value={toDate}
@@ -921,6 +880,32 @@ function IncomeOPPageContent() {
                   <Button onClick={handleSearch} isLoading={loading}>
                     <Search size={16} className="mr-1" /> Search
                   </Button>
+                </div>
+                </div>
+                <div className="bg-white rounded-2xl border border-slate-200/60 p-4 flex flex-wrap gap-2 items-center content-center">
+                    <button
+                      onClick={() => openImportModal("billing")}
+                      className="inline-flex items-center justify-center px-4 py-2.5 rounded-xl text-sm font-semibold transition-all border bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100"
+                    >
+                      <Download size={16} className="mr-1" /> Import OP Bills
+                    </button>
+                    <button
+                      onClick={() => openImportModal("detail")}
+                      className="inline-flex items-center justify-center px-4 py-2.5 rounded-xl text-sm font-semibold transition-all border bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100"
+                    >
+                      <Download size={16} className="mr-1" /> Import OP Dtl. Bills
+                    </button>
+                    <button
+                      onClick={() => handleTableViewChange(tableView === "transactions" ? "logs" : "transactions")}
+                      title={tableView === "transactions" ? "View Import Logs" : "View Transactions"}
+                      className={`inline-flex items-center justify-center px-4 py-2.5 rounded-xl font-semibold transition-all border ${
+                        tableView === "logs"
+                          ? "bg-gradient-to-r from-indigo-500 to-indigo-600 text-white border-transparent shadow-md shadow-indigo-500/30"
+                          : "bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100"
+                      }`}
+                    >
+                      {tableView === "transactions" ? <Eye size={24} /> : <EyeOff size={24} />}
+                    </button>
                 </div>
               </div>
 
@@ -951,6 +936,7 @@ function IncomeOPPageContent() {
                 </div>
               </Modal>
 
+              {tableView === "transactions" && (
               <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -996,13 +982,12 @@ function IncomeOPPageContent() {
                           return (
                           <tr key={txn.id}
                             onClick={() => {
-                              sessionStorage.setItem("opFilterState", JSON.stringify({ page, search, fromDate, toDate, txnPaymentFilter, txnDoctorFilter, txnStatusFilter, activeTab }));
+                              sessionStorage.setItem("opFilterState", JSON.stringify({ page, search, fromDate, toDate, txnPaymentFilter, txnStatusFilter, activeTab }));
                               const p = new URLSearchParams();
                               if (search) p.set("search", search);
                               if (fromDate) p.set("fromDate", fromDate);
                               if (toDate) p.set("toDate", toDate);
                               if (txnPaymentFilter) p.set("pm", txnPaymentFilter);
-                              if (txnDoctorFilter) p.set("docId", txnDoctorFilter);
                               if (txnStatusFilter) p.set("txnStatus", txnStatusFilter);
                               p.set("page", String(page));
                               p.set("tab", activeTab);
@@ -1069,106 +1054,98 @@ function IncomeOPPageContent() {
                   <Pagination page={page} totalPages={pagination.pages} total={pagination.total} limit={10} onPageChange={handlePageChange} />
                 )}
               </div>
-            </>
-          )}
+              )}
 
-          {activeTab === "importlog" && (
-            <>
-              <div className="flex flex-col sm:flex-row justify-end gap-3 mb-6">
-                <Button onClick={() => openImportModal("billing")}>
-                  <Upload size={16} className="mr-2" /> OP Billing Report
-                </Button>
-                <Button onClick={() => openImportModal("detail")}>
-                  <Upload size={16} className="mr-2" /> OP Detail Report
-                </Button>
-              </div>
-
-              <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-200/60">
-                        <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">File Name</th>
-                        <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden sm:table-cell">Type</th>
-                        <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Total</th>
-                        <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">
-                          <span className="text-emerald-500">Inserted</span>
-                        </th>
-                        <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden sm:table-cell">
-                          <span className="text-amber-500">Updated</span>
-                        </th>
-                        <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">
-                          <span className="text-slate-400">Skipped</span>
-                        </th>
-                        <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">
-                          <span className="text-red-500">Failed</span>
-                        </th>
-                        <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden md:table-cell">Imported At</th>
-                        <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {logLoading ? (
-                        <tr><td colSpan={9} className="text-center py-12 text-slate-400">
-                          <div className="flex items-center justify-center gap-2">
-                            <div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin" />
-                            Loading...
-                          </div>
-                        </td></tr>
-                      ) : importLogs.length === 0 ? (
-                        <tr><td colSpan={9} className="text-center py-12 text-slate-400">No import logs found</td></tr>
-                      ) : (
-                        importLogs.map((log) => (
-                          <tr key={log.id} className="hover:bg-slate-50/80">
-                            <td className="px-5 py-3.5 font-medium text-slate-700 max-w-[200px] truncate">{log.fileName}</td>
-                            <td className="px-5 py-3.5 hidden sm:table-cell">
-                              <span className="inline-block px-2.5 py-1 bg-indigo-50 text-indigo-600 rounded-full text-xs font-medium">{getFileTypeLabel(log.fileType)}</span>
-                            </td>
-                            <td className="px-5 py-3.5 text-center text-slate-700">{log.totalRecords}</td>
-                            <td className="px-5 py-3.5 text-center">
-                              <span className="inline-flex items-center gap-1 text-emerald-600 font-medium">
-                                <CheckCircle2 size={14} /> {log.inserted}
-                              </span>
-                            </td>
-                            <td className="px-5 py-3.5 text-center hidden sm:table-cell">
-                              <span className="inline-flex items-center gap-1 text-amber-600 font-medium">
-                                <Clock size={14} /> {log.updated}
-                              </span>
-                            </td>
-                            <td className="px-5 py-3.5 text-center">
-                              <span className={`inline-flex items-center gap-1 font-medium ${log.skipped > 0 ? "text-slate-500" : "text-slate-300"}`}>
-                                {log.skipped}
-                              </span>
-                            </td>
-                            <td className="px-5 py-3.5 text-center">
-                              <span className={`inline-flex items-center gap-1 font-medium ${log.failed > 0 ? "text-red-600" : "text-slate-400"}`}>
-                                <XCircle size={14} /> {log.failed}
-                              </span>
-                            </td>
-                            <td className="px-5 py-3.5 text-slate-500 hidden md:table-cell">{formatDateTime(log.importStarted)}</td>
-                            <td className="px-5 py-3.5 text-center">
-                              {log.failed > 0 ? (
-                                <button
-                                  onClick={() => handleViewErrors(log)}
-                                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-medium hover:bg-red-100 transition-colors"
-                                >
-                                  <Eye size={14} /> View Errors
-                                </button>
-                              ) : (
-                                <span className="text-xs text-slate-400">No errors</span>
-                              )}
-                            </td>
+              {tableView === "logs" && (
+                <>
+                  <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-slate-200/60">
+                            <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">File Name</th>
+                            <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden sm:table-cell">Type</th>
+                            <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Total</th>
+                            <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">
+                              <span className="text-emerald-500">Inserted</span>
+                            </th>
+                            <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden sm:table-cell">
+                              <span className="text-amber-500">Updated</span>
+                            </th>
+                            <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">
+                              <span className="text-slate-400">Skipped</span>
+                            </th>
+                            <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">
+                              <span className="text-red-500">Failed</span>
+                            </th>
+                            <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden md:table-cell">Imported At</th>
+                            <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Actions</th>
                           </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {logLoading ? (
+                            <tr><td colSpan={9} className="text-center py-12 text-slate-400">
+                              <div className="flex items-center justify-center gap-2">
+                                <div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin" />
+                                Loading...
+                              </div>
+                            </td></tr>
+                          ) : importLogs.length === 0 ? (
+                            <tr><td colSpan={9} className="text-center py-12 text-slate-400">No import logs found</td></tr>
+                          ) : (
+                            importLogs.map((log) => (
+                              <tr key={log.id} className="hover:bg-slate-50/80">
+                                <td className="px-5 py-3.5 font-medium text-slate-700 max-w-[200px] truncate">{log.fileName}</td>
+                                <td className="px-5 py-3.5 hidden sm:table-cell">
+                                  <span className="inline-block px-2.5 py-1 bg-indigo-50 text-indigo-600 rounded-full text-xs font-medium">{getFileTypeLabel(log.fileType)}</span>
+                                </td>
+                                <td className="px-5 py-3.5 text-center text-slate-700">{log.totalRecords}</td>
+                                <td className="px-5 py-3.5 text-center">
+                                  <span className="inline-flex items-center gap-1 text-emerald-600 font-medium">
+                                    <CheckCircle2 size={14} /> {log.inserted}
+                                  </span>
+                                </td>
+                                <td className="px-5 py-3.5 text-center hidden sm:table-cell">
+                                  <span className="inline-flex items-center gap-1 text-amber-600 font-medium">
+                                    <Clock size={14} /> {log.updated}
+                                  </span>
+                                </td>
+                                <td className="px-5 py-3.5 text-center">
+                                  <span className={`inline-flex items-center gap-1 font-medium ${log.skipped > 0 ? "text-slate-500" : "text-slate-300"}`}>
+                                    {log.skipped}
+                                  </span>
+                                </td>
+                                <td className="px-5 py-3.5 text-center">
+                                  <span className={`inline-flex items-center gap-1 font-medium ${log.failed > 0 ? "text-red-600" : "text-slate-400"}`}>
+                                    <XCircle size={14} /> {log.failed}
+                                  </span>
+                                </td>
+                                <td className="px-5 py-3.5 text-slate-500 hidden md:table-cell">{formatDateTime(log.importStarted)}</td>
+                                <td className="px-5 py-3.5 text-center">
+                                  {log.failed > 0 ? (
+                                    <button
+                                      onClick={() => handleViewErrors(log)}
+                                      className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-medium hover:bg-red-100 transition-colors"
+                                    >
+                                      <Eye size={14} /> View Errors
+                                    </button>
+                                  ) : (
+                                    <span className="text-xs text-slate-400">No errors</span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
 
-                {logPagination.pages > 1 && (
-                  <Pagination page={logPage} totalPages={logPagination.pages} total={logPagination.total} limit={10} onPageChange={handleLogPageChange} />
-                )}
-              </div>
+                    {logPagination.pages > 1 && (
+                      <Pagination page={logPage} totalPages={logPagination.pages} total={logPagination.total} limit={10} onPageChange={handleLogPageChange} />
+                    )}
+                  </div>
+                </>
+              )}
             </>
           )}
 

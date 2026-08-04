@@ -7,7 +7,7 @@ import api from "@/lib/api";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import toast from "react-hot-toast";
-import { Upload, Search, X, Banknote, CreditCard, Wallet, TrendingUp, List, LayoutDashboard, FileText, Clock, CheckCircle2, XCircle, Eye, Stethoscope } from "lucide-react";
+import { Download, Search, X, Banknote, CreditCard, Wallet, TrendingUp, List, LayoutDashboard, Clock, CheckCircle2, XCircle, Eye, EyeOff, Stethoscope } from "lucide-react";
 import Pagination from "@/components/ui/Pagination";
 
 interface Dashboard {
@@ -104,11 +104,14 @@ function IncomeIPPageContent() {
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth() + 1;
-  const [activeTab, setActiveTab] = useState<"dashboard" | "transactions" | "importlog">(() => {
+  const [activeTab, setActiveTab] = useState<"dashboard" | "transactions">(() => {
     const tab = searchParams.get("tab");
-    if (tab === "transactions" || tab === "importlog") return tab;
+    if (tab === "transactions" || tab === "importlog") return "transactions";
     return "dashboard";
   });
+  const [tableView, setTableView] = useState<"transactions" | "logs">(() =>
+    searchParams.get("tab") === "importlog" ? "logs" : "transactions"
+  );
   const [dashboard, setDashboard] = useState<Dashboard>({ cash: 0, bank: 0, credit: 0, total: 0, doctorFeeLiability: 0 });
   const [dashYear, setDashYear] = useState(currentYear);
   const [dashMonth, setDashMonth] = useState(currentMonth);
@@ -131,6 +134,7 @@ function IncomeIPPageContent() {
   const [fromDate, setFromDate] = useState(() => searchParams.get("fromDate") || "");
   const [toDate, setToDate] = useState(() => searchParams.get("toDate") || "");
   const [txnStatusFilter, setTxnStatusFilter] = useState(() => searchParams.get("txnStatus") || "");
+  const [txnPaymentFilter, setTxnPaymentFilter] = useState(() => searchParams.get("paymentMode") || "");
   const [pymtStatusFilter, setPymtStatusFilter] = useState(() => searchParams.get("pymtStatus") || "");
   const [page, setPage] = useState(() => parseInt(searchParams.get("page") || "1"));
   const [hasSearched, setHasSearched] = useState(() => searchParams.get("tab") === "transactions");
@@ -238,11 +242,13 @@ function IncomeIPPageContent() {
       const td = searchParams.get("toDate") || "";
       const ts = searchParams.get("txnStatus") || "";
       const ps = searchParams.get("pymtStatus") || "";
-      fetchTxns(p, s, fd, td, ts, ps);
+      const pm = searchParams.get("paymentMode") || "";
+      setTxnPaymentFilter(pm);
+      fetchTxns(p, s, fd, td, ts, ps, pm);
     }
   }, [searchParams]);
 
-  async function fetchTxns(p = page, s = search, fd = fromDate, td = toDate, ts = txnStatusFilter, ps = pymtStatusFilter) {
+  async function fetchTxns(p = page, s = search, fd = fromDate, td = toDate, ts = txnStatusFilter, ps = pymtStatusFilter, pm = txnPaymentFilter) {
     setLoading(true);
     try {
       const params = new URLSearchParams({ page: String(p), limit: "10" });
@@ -251,6 +257,7 @@ function IncomeIPPageContent() {
       if (td) params.set("toDate", td);
       if (ts) params.set("txnStatus", ts);
       if (ps) params.set("pymtStatus", ps);
+      if (pm) params.set("paymentMode", pm);
       const { data } = await api.get(`/income/ip/txns?${params.toString()}`);
       setTxns(data.txns);
       setPagination(data.pagination);
@@ -276,19 +283,19 @@ function IncomeIPPageContent() {
   };
 
   useEffect(() => {
-    if (activeTab === "importlog") fetchImportLogs();
-  }, [activeTab, logPage]);
+    if (tableView === "logs") fetchImportLogs();
+  }, [tableView, logPage]);
 
   useEffect(() => {
     const next = new URLSearchParams(searchParams.toString());
     if (activeTab === "dashboard") next.delete("tab");
-    else next.set("tab", activeTab);
+    else next.set("tab", activeTab === "transactions" && tableView === "logs" ? "importlog" : activeTab);
     const nextQs = next.toString();
     const currentQs = searchParams.toString();
     if (nextQs !== currentQs) {
       router.replace(nextQs ? `${pathname}?${nextQs}` : pathname);
     }
-  }, [activeTab, pathname, router, searchParams]);
+  }, [activeTab, tableView, pathname, router, searchParams]);
 
   const handleDashFilter = () => {
     fetchDashboard(dashFromDate, dashToDate);
@@ -297,15 +304,23 @@ function IncomeIPPageContent() {
 
   const handleSearch = () => {
     setPage(1);
-    fetchTxns(1, search, fromDate, toDate, txnStatusFilter, pymtStatusFilter);
+    fetchTxns(1, search, fromDate, toDate, txnStatusFilter, pymtStatusFilter, txnPaymentFilter);
   };
 
   const handlePageChange = (p: number) => {
     setPage(p);
-    fetchTxns(p, search, fromDate, toDate, txnStatusFilter, pymtStatusFilter);
+    fetchTxns(p, search, fromDate, toDate, txnStatusFilter, pymtStatusFilter, txnPaymentFilter);
   };
 
-  const handleLogPageChange = (p: number) => setLogPage(p);
+  const handleLogPageChange = (p: number) => {
+    setLogPage(p);
+    fetchImportLogs(p);
+  };
+
+  const handleTableViewChange = (v: "transactions" | "logs") => {
+    setTableView(v);
+    if (v === "logs") fetchImportLogs();
+  };
 
   const handleCardClick = (pymtStatus?: string) => {
     setPymtStatusFilter(pymtStatus || "");
@@ -314,9 +329,10 @@ function IncomeIPPageContent() {
     setTxnMonth(dashMonth);
     setFromDate(dashFromDate);
     setToDate(dashToDate);
+    setTxnPaymentFilter("");
     setActiveTab("transactions");
     setPage(1);
-    fetchTxns(1, "", dashFromDate, dashToDate, txnStatusFilter, pymtStatus || "");
+    fetchTxns(1, "", dashFromDate, dashToDate, txnStatusFilter, pymtStatus || "", "");
   };
 
   const openImportModal = (type: "ip" | "ipd") => {
@@ -520,12 +536,6 @@ function IncomeIPPageContent() {
           >
             <List size={16} /> Transactions
           </button>
-          <button
-            onClick={() => setActiveTab("importlog")}
-            className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === "importlog" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-          >
-            <FileText size={16} /> IP Data Import
-          </button>
         </div>
 
         {activeTab === "dashboard" && (
@@ -695,66 +705,120 @@ function IncomeIPPageContent() {
 
         {activeTab === "transactions" && (
           <>
-            <div className="bg-white rounded-2xl border border-slate-200/60 p-4 mb-6">
-              <div className="flex flex-col sm:flex-row gap-3 items-end">
-                <div className="flex-1 w-full sm:max-w-xs">
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Search</label>
-                  <div className="relative">
-                    <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <div className="flex flex-col lg:flex-row gap-4 mb-6">
+              <div className="bg-white rounded-2xl border border-slate-200/60 p-4 flex-1">
+                <div className="flex flex-col sm:flex-row gap-3 items-end">
+                  <div className="w-full sm:w-auto">
+                    <select
+                      value={txnYear}
+                      onChange={(e) => setTxnYear(parseInt(e.target.value))}
+                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                    >
+                      {getYearOptions().map((y) => (
+                        <option key={y.value} value={y.value}>{y.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="w-full sm:w-auto">
+                    <select
+                      value={txnMonth}
+                      onChange={(e) => setTxnMonth(parseInt(e.target.value))}
+                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                    >
+                      {MONTHS.map((m) => (
+                        <option key={m.value} value={m.value}>{m.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex-1 w-full sm:max-w-xs">
+                    <div className="relative">
+                      <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Bill No, Patient, UHID..."
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                        className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                      />
+                    </div>
+                  </div>
+                  <div className="w-full sm:w-auto">
+                    <select
+                      value={txnPaymentFilter}
+                      onChange={(e) => setTxnPaymentFilter(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                    >
+                      <option value="">All Payment</option>
+                      <option value="CASH">Cash</option>
+                      <option value="BANK">Bank</option>
+                      <option value="CARD">Card</option>
+                      <option value="UPI">UPI</option>
+                      <option value="CHEQUE">Cheque</option>
+                    </select>
+                  </div>
+                  <div className="w-full sm:w-auto">
+                    <select
+                      value={txnStatusFilter}
+                      onChange={(e) => setTxnStatusFilter(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                    >
+                      <option value="">All Txn Status</option>
+                      <option value="VERIFIED">Verified</option>
+                      <option value="UNVERIFIED">Unverified</option>
+                      <option value="REVIEW_REQ">Review Required</option>
+                      <option value="ERROR">Error</option>
+                    </select>
+                  </div>
+                  <div className="w-full sm:w-auto">
                     <input
-                      type="text"
-                      placeholder="Bill No, Patient, UHID..."
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                      type="date"
+                      value={fromDate}
+                      onChange={(e) => setFromDate(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
                     />
                   </div>
-                </div>
-                <div className="w-full sm:w-auto">
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Txn Status</label>
-                  <select
-                    value={txnStatusFilter}
-                    onChange={(e) => setTxnStatusFilter(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-                  >
-                    <option value="">All Txn Status</option>
-                    <option value="VERIFIED">Verified</option>
-                    <option value="UNVERIFIED">Unverified</option>
-                    <option value="REVIEW_REQ">Review Required</option>
-                    <option value="ERROR">Error</option>
-                  </select>
-                </div>
-                <div className="w-full sm:w-auto">
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Year</label>
-                  <select
-                    value={txnYear}
-                    onChange={(e) => setTxnYear(parseInt(e.target.value))}
-                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-                  >
-                    {getYearOptions().map((y) => (
-                      <option key={y.value} value={y.value}>{y.label}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="w-full sm:w-auto">
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Month</label>
-                  <select
-                    value={txnMonth}
-                    onChange={(e) => setTxnMonth(parseInt(e.target.value))}
-                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-                  >
-                    {MONTHS.map((m) => (
-                      <option key={m.value} value={m.value}>{m.label}</option>
-                    ))}
-                  </select>
-                </div>
-                <Button onClick={handleSearch} isLoading={loading}>
-                  <Search size={16} className="mr-1" /> Search
-                </Button>
+                  <div className="w-full sm:w-auto">
+                    <input
+                      type="date"
+                      value={toDate}
+                      onChange={(e) => setToDate(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                    />
+                  </div>
+                  <Button onClick={handleSearch} isLoading={loading}>
+                    <Search size={16} className="mr-1" /> Search
+                  </Button>
+              </div>
+              </div>
+              <div className="bg-white rounded-2xl border border-slate-200/60 p-4 flex flex-wrap gap-2 items-center content-center">
+                <button
+                  onClick={() => openImportModal("ip")}
+                  className="inline-flex items-center justify-center px-4 py-2.5 rounded-xl text-sm font-semibold transition-all border bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100"
+                >
+                  <Download size={16} className="mr-1" /> Import IP Bills
+                </button>
+                <button
+                  onClick={() => openImportModal("ipd")}
+                  className="inline-flex items-center justify-center px-4 py-2.5 rounded-xl text-sm font-semibold transition-all border bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100"
+                >
+                  <Download size={16} className="mr-1" /> Import IP Dtl. Bills
+                </button>
+                <button
+                  onClick={() => handleTableViewChange(tableView === "transactions" ? "logs" : "transactions")}
+                  title={tableView === "transactions" ? "View Import Logs" : "View Transactions"}
+                  className={`inline-flex items-center justify-center px-4 py-2.5 rounded-xl font-semibold transition-all border ${
+                    tableView === "logs"
+                      ? "bg-gradient-to-r from-indigo-500 to-indigo-600 text-white border-transparent shadow-md shadow-indigo-500/30"
+                      : "bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100"
+                  }`}
+                >
+                  {tableView === "transactions" ? <Eye size={24} /> : <EyeOff size={24} />}
+                </button>
               </div>
             </div>
 
+            {tableView === "transactions" && (
             <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -765,9 +829,9 @@ function IncomeIPPageContent() {
                       <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Patient</th>
                       <th className="text-right px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Total Amt</th>
                       <th className="text-right px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Discount</th>
-                      <th className="text-right px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Net Amt</th>
                       <th className="text-right px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Adv Adj</th>
                       <th className="text-right px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Final Amt</th>
+                      <th className="text-right px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Balance</th>
                       <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Payment</th>
                       <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Pymt Status</th>
                       <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Txn Status</th>
@@ -800,6 +864,7 @@ function IncomeIPPageContent() {
                               params.set("toDate", toDate);
                               params.set("txnStatus", txnStatusFilter);
                               params.set("pymtStatus", pymtStatusFilter);
+                              params.set("paymentMode", txnPaymentFilter);
                               params.set("page", String(page));
                               router.push(`/income/ip/review/${txn.id}?${params.toString()}`);
                             }}
@@ -810,9 +875,9 @@ function IncomeIPPageContent() {
                             <td className={`px-5 py-3.5 group-hover:text-purple-700 ${isReviewReq ? "text-red-600" : "text-slate-700"}`}>{txn.patient?.name || "-"}</td>
                             <td className="px-5 py-3.5 text-right font-medium group-hover:text-purple-700 text-slate-700">{txn.grossAmount ? formatCurrency(Number(txn.grossAmount)) : "-"}</td>
                             <td className="px-5 py-3.5 text-right font-medium group-hover:text-purple-700 text-slate-700">{txn.discountAmount ? formatCurrency(Number(txn.discountAmount)) : "-"}</td>
-                            <td className="px-5 py-3.5 text-right font-medium group-hover:text-purple-700 text-slate-700">{formatCurrency((Number(txn.grossAmount) || 0) - (Number(txn.discountAmount) || 0))}</td>
                             <td className="px-5 py-3.5 text-right font-medium group-hover:text-purple-700 text-slate-700">{txn.advAdjt ? formatCurrency(Number(txn.advAdjt)) : "-"}</td>
                             <td className={`px-5 py-3.5 text-right font-medium group-hover:text-purple-700 ${isReviewReq ? "text-red-600" : "text-slate-700"}`}>{txn.billAmt ? formatCurrency(Number(txn.billAmt)) : "-"}</td>
+                            <td className="px-5 py-3.5 text-right font-semibold group-hover:text-purple-700 text-slate-700">{formatCurrency((Number(txn.billAmt) || 0) - (txn.rcvdPymts || []).reduce((s, p) => s + (Number(p.amount) || 0), 0))}</td>
                             <td className="px-5 py-3.5">
                               <div className="flex flex-wrap gap-1">
                                 {txn.rcvdPymts.map((p, i) => (
@@ -849,106 +914,99 @@ function IncomeIPPageContent() {
                 <Pagination page={page} totalPages={pagination.pages} total={pagination.total} limit={10} onPageChange={handlePageChange} />
               )}
             </div>
-          </>
-        )}
+            )}
 
-        {activeTab === "importlog" && (
-          <>
-            <div className="flex flex-col sm:flex-row justify-end gap-3 mb-6">
-              <Button onClick={() => openImportModal("ip")}>
-                <Upload size={16} className="mr-2" /> IP Billing Report
-              </Button>
-              <Button onClick={() => openImportModal("ipd")}>
-                <Upload size={16} className="mr-2" /> IPD Detail Report
-              </Button>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200/60">
-                      <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">File Name</th>
-                      <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden sm:table-cell">Type</th>
-                      <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Total</th>
-                      <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">
-                        <span className="text-emerald-500">Inserted</span>
-                      </th>
-                      <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden sm:table-cell">
-                        <span className="text-amber-500">Updated</span>
-                      </th>
-                      <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">
-                        <span className="text-slate-400">Skipped</span>
-                      </th>
-                      <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">
-                        <span className="text-red-500">Failed</span>
-                      </th>
-                      <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden md:table-cell">Imported At</th>
-                      <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {logLoading ? (
-                      <tr><td colSpan={8} className="text-center py-12 text-slate-400">
-                        <div className="flex items-center justify-center gap-2">
-                          <div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin" />
-                          Loading...
-                        </div>
-                      </td></tr>
-                    ) : importLogs.length === 0 ? (
-                      <tr><td colSpan={8} className="text-center py-12 text-slate-400">No import logs found</td></tr>
-                    ) : (
-                      importLogs.map((log) => (
-                        <tr key={log.id} className="hover:bg-slate-50/80">
-                          <td className="px-5 py-3.5 font-medium text-slate-700 max-w-[200px] truncate">{log.fileName}</td>
-                          <td className="px-5 py-3.5 hidden sm:table-cell">
-                            <span className="inline-block px-2.5 py-1 bg-indigo-50 text-indigo-600 rounded-full text-xs font-medium">{getFileTypeLabel(log.fileType)}</span>
-                          </td>
-                          <td className="px-5 py-3.5 text-center text-slate-700">{log.totalRecords}</td>
-                          <td className="px-5 py-3.5 text-center">
-                            <span className="inline-flex items-center gap-1 text-emerald-600 font-medium">
-                              <CheckCircle2 size={14} /> {log.inserted}
-                            </span>
-                          </td>
-                          <td className="px-5 py-3.5 text-center hidden sm:table-cell">
-                            <span className="inline-flex items-center gap-1 text-amber-600 font-medium">
-                              <Clock size={14} /> {log.updated}
-                            </span>
-                          </td>
-                          <td className="px-5 py-3.5 text-center">
-                            <span className={`inline-flex items-center gap-1 font-medium ${log.skipped > 0 ? "text-slate-500" : "text-slate-300"}`}>
-                              {log.skipped}
-                            </span>
-                          </td>
-                          <td className="px-5 py-3.5 text-center">
-                            <span className={`inline-flex items-center gap-1 font-medium ${log.failed > 0 ? "text-red-600" : "text-slate-400"}`}>
-                              <XCircle size={14} /> {log.failed}
-                            </span>
-                          </td>
-                          <td className="px-5 py-3.5 text-slate-500 hidden md:table-cell">{formatDateTime(log.importStarted)}</td>
-                          <td className="px-5 py-3.5 text-center">
-                            {log.failed > 0 || log.skipped > 0 ? (
-                              <button
-                                onClick={() => handleViewErrors(log)}
-                                className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-medium hover:bg-red-100 transition-colors"
-                              >
-                                <Eye size={14} /> View Errors
-                              </button>
-                            ) : (
-                              <span className="text-xs text-slate-400">No errors</span>
-                            )}
-                          </td>
+            {tableView === "logs" && (
+              <>
+                <h2 className="text-lg font-bold text-slate-800 mb-4">Import History</h2>
+                <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200/60">
+                          <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">File Name</th>
+                          <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden sm:table-cell">Type</th>
+                          <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Total</th>
+                          <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">
+                            <span className="text-emerald-500">Inserted</span>
+                          </th>
+                          <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden sm:table-cell">
+                            <span className="text-amber-500">Updated</span>
+                          </th>
+                          <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">
+                            <span className="text-slate-400">Skipped</span>
+                          </th>
+                          <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">
+                            <span className="text-red-500">Failed</span>
+                          </th>
+                          <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden md:table-cell">Imported At</th>
+                          <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Actions</th>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {logLoading ? (
+                          <tr><td colSpan={8} className="text-center py-12 text-slate-400">
+                            <div className="flex items-center justify-center gap-2">
+                              <div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin" />
+                              Loading...
+                            </div>
+                          </td></tr>
+                        ) : importLogs.length === 0 ? (
+                          <tr><td colSpan={8} className="text-center py-12 text-slate-400">No import logs found</td></tr>
+                        ) : (
+                          importLogs.map((log) => (
+                            <tr key={log.id} className="hover:bg-slate-50/80">
+                              <td className="px-5 py-3.5 font-medium text-slate-700 max-w-[200px] truncate">{log.fileName}</td>
+                              <td className="px-5 py-3.5 hidden sm:table-cell">
+                                <span className="inline-block px-2.5 py-1 bg-indigo-50 text-indigo-600 rounded-full text-xs font-medium">{getFileTypeLabel(log.fileType)}</span>
+                              </td>
+                              <td className="px-5 py-3.5 text-center text-slate-700">{log.totalRecords}</td>
+                              <td className="px-5 py-3.5 text-center">
+                                <span className="inline-flex items-center gap-1 text-emerald-600 font-medium">
+                                  <CheckCircle2 size={14} /> {log.inserted}
+                                </span>
+                              </td>
+                              <td className="px-5 py-3.5 text-center hidden sm:table-cell">
+                                <span className="inline-flex items-center gap-1 text-amber-600 font-medium">
+                                  <Clock size={14} /> {log.updated}
+                                </span>
+                              </td>
+                              <td className="px-5 py-3.5 text-center">
+                                <span className={`inline-flex items-center gap-1 font-medium ${log.skipped > 0 ? "text-slate-500" : "text-slate-300"}`}>
+                                  {log.skipped}
+                                </span>
+                              </td>
+                              <td className="px-5 py-3.5 text-center">
+                                <span className={`inline-flex items-center gap-1 font-medium ${log.failed > 0 ? "text-red-600" : "text-slate-400"}`}>
+                                  <XCircle size={14} /> {log.failed}
+                                </span>
+                              </td>
+                              <td className="px-5 py-3.5 text-slate-500 hidden md:table-cell">{formatDateTime(log.importStarted)}</td>
+                              <td className="px-5 py-3.5 text-center">
+                                {log.failed > 0 || log.skipped > 0 ? (
+                                  <button
+                                    onClick={() => handleViewErrors(log)}
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-medium hover:bg-red-100 transition-colors"
+                                  >
+                                    <Eye size={14} /> View Errors
+                                  </button>
+                                ) : (
+                                  <span className="text-xs text-slate-400">No errors</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
 
-              {logPagination.pages > 1 && (
-                <Pagination page={logPage} totalPages={logPagination.pages} total={logPagination.total} limit={10} onPageChange={handleLogPageChange} />
-              )}
-            </div>
+                  {logPagination.pages > 1 && (
+                    <Pagination page={logPage} totalPages={logPagination.pages} total={logPagination.total} limit={10} onPageChange={handleLogPageChange} />
+                  )}
+                </div>
+              </>
+            )}
           </>
         )}
 

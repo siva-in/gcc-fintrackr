@@ -6,7 +6,7 @@ import api from "@/lib/api";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import toast from "react-hot-toast";
-import { Upload, Search, X, Banknote, CreditCard, Wallet, TrendingUp, List, LayoutDashboard, FileText, AlertTriangle, Eye, Stethoscope, CheckCircle } from "lucide-react";
+import { Download, Search, X, Banknote, CreditCard, Wallet, TrendingUp, AlertTriangle, Eye, EyeOff, CheckCircle } from "lucide-react";
 import Pagination from "@/components/ui/Pagination";
 
 interface Dashboard {
@@ -14,7 +14,6 @@ interface Dashboard {
   bank: number;
   credit: number;
   total: number;
-  doctorFeeLiability: number;
 }
 
 interface IncomeTxn {
@@ -83,13 +82,12 @@ export default function IncomeLabPage() {
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth() + 1;
-  const [activeTab, setActiveTab] = useState<"dashboard" | "transactions" | "importlog">("dashboard");
-  const [dashboard, setDashboard] = useState<Dashboard>({ cash: 0, bank: 0, credit: 0, total: 0, doctorFeeLiability: 0 });
+  const [dashboard, setDashboard] = useState<Dashboard>({ cash: 0, bank: 0, credit: 0, total: 0 });
   const [dashYear, setDashYear] = useState(currentYear);
   const [dashMonth, setDashMonth] = useState(currentMonth);
   const [dashFromDate, setDashFromDate] = useState(() => getMonthRange(currentYear, currentMonth).from);
   const [dashToDate, setDashToDate] = useState(() => getMonthRange(currentYear, currentMonth).to);
-  const [dashLoading, setDashLoading] = useState(false);
+  const [, setDashLoading] = useState(false);
 
   const [txns, setTxns] = useState<IncomeTxn[]>([]);
   const [pagination, setPagination] = useState({ total: 0, page: 1, pages: 1 });
@@ -106,6 +104,7 @@ export default function IncomeLabPage() {
   const [logPagination, setLogPagination] = useState({ total: 0, page: 1, pages: 1 });
   const [logPage, setLogPage] = useState(1);
   const [logLoading, setLogLoading] = useState(false);
+  const [tableView, setTableView] = useState<"transactions" | "logs">("transactions");
 
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -129,33 +128,9 @@ export default function IncomeLabPage() {
   const [editAdjt, setEditAdjt] = useState("");
   const [editNet, setEditNet] = useState("");
 
-  interface DoctorSummary {
-    doctor: { id: number; name: string; descName: string };
-    pendingCount: number;
-    pendingAmount: number;
-    patients: string[];
-  }
-  const [doctorSummary, setDoctorSummary] = useState<DoctorSummary[]>([]);
-  const [doctorGrandTotal, setDoctorGrandTotal] = useState(0);
-  const [doctorSummaryLoading, setDoctorSummaryLoading] = useState(false);
-
-  const [settleModalOpen, setSettleModalOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkVerifying, setBulkVerifying] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [settleDoctor, setSettleDoctor] = useState<{ id: number; name: string } | null>(null);
-  const [settlePayables, setSettlePayables] = useState<{ id: number; billNo: string; billedAmt: number; balanceAmt: number; status: string; paidTotal: number; remarks: string | null; incomeTxn: { billNo: string; patient: { name: string } | null } | null; pymts: { id: number; amount: number | null; paymentMode: { code: string; name: string } | null; paymentDate: string | null; paidBy: string | null }[] }[]>([]);
-  const [settleGrandTotal, setSettleGrandTotal] = useState(0);
-  const [settleLoading, setSettleLoading] = useState(false);
-  const [settleSelected, setSettleSelected] = useState<Set<number>>(new Set());
-  const [settleAmounts, setSettleAmounts] = useState<Record<number, string>>({});
-  const [settleMode, setSettleMode] = useState("");
-  const [settleDate, setSettleDate] = useState(new Date().toISOString().split("T")[0]);
-  const [settleTxnNo, setSettleTxnNo] = useState("");
-  const [settleBank, setSettleBank] = useState("");
-  const [settlePaidBy, setSettlePaidBy] = useState("");
-  const [settleRemarks, setSettleRemarks] = useState("");
-  const [settleSaving, setSettleSaving] = useState(false);
   const [paymentModes, setPaymentModes] = useState<{ id: number; code: string; name: string }[]>([]);
 
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
@@ -169,114 +144,6 @@ export default function IncomeLabPage() {
     setDashFromDate(range.from);
     setDashToDate(range.to);
   }, [dashYear, dashMonth]);
-
-  const fetchDoctorSummary = useCallback(async (fd = dashFromDate, td = dashToDate) => {
-    setDoctorSummaryLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (fd) params.set("fromDate", fd);
-      if (td) params.set("toDate", td);
-      const { data } = await api.get(`/income/lab/doctor-summary?${params.toString()}`);
-      setDoctorSummary(data.summary);
-      setDoctorGrandTotal(data.grandTotal);
-    } catch {
-      toast.error("Failed to load doctor summary");
-    } finally {
-      setDoctorSummaryLoading(false);
-    }
-  }, [dashFromDate, dashToDate]);
-
-  const openSettleModal = async (doctor: { id: number; name: string }) => {
-    setSettleDoctor(doctor);
-    setSettlePayables([]);
-    setSettleGrandTotal(0);
-    setSettleSelected(new Set());
-    setSettleAmounts({});
-    setSettleMode("");
-    setSettleDate(new Date().toISOString().split("T")[0]);
-    setSettleTxnNo("");
-    setSettleBank("");
-    setSettlePaidBy("");
-    setSettleRemarks("");
-    setSettleModalOpen(true);
-    setSettleLoading(true);
-    try {
-      const [payablesRes, modesRes] = await Promise.all([
-        api.get(`/income/lab/doctor-payables?doctorId=${doctor.id}`),
-        api.get("/income/lab/payment-modes"),
-      ]);
-      setSettlePayables(payablesRes.data.payables);
-      setSettleGrandTotal(payablesRes.data.grandTotal);
-      setPaymentModes(modesRes.data);
-      const amounts: Record<number, string> = {};
-      payablesRes.data.payables.forEach((p: { id: number; balanceAmt: number }) => { amounts[p.id] = String(p.balanceAmt); });
-      setSettleAmounts(amounts);
-    } catch {
-      toast.error("Failed to load payables");
-    } finally {
-      setSettleLoading(false);
-    }
-  };
-
-  const toggleSettleSelect = (id: number) => {
-    setSettleSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const toggleSettleAll = () => {
-    if (settleSelected.size === settlePayables.length) {
-      setSettleSelected(new Set());
-    } else {
-      setSettleSelected(new Set(settlePayables.map((p) => p.id)));
-    }
-  };
-
-  const settleTotalSelected = settlePayables
-    .filter((p) => settleSelected.has(p.id))
-    .reduce((sum, p) => sum + (parseFloat(settleAmounts[p.id]) || 0), 0);
-
-  const handleSettlePay = async () => {
-    if (settleSelected.size === 0) return toast.error("Select at least one payable");
-    if (!settleMode) return toast.error("Select a payment mode");
-
-    const selected = settlePayables.filter((p) => settleSelected.has(p.id));
-    for (const p of selected) {
-      const amt = parseFloat(settleAmounts[p.id]);
-      if (!amt || amt <= 0) return toast.error(`Enter a valid amount for bill ${p.incomeTxn?.billNo || p.id}`);
-      if (amt > Number(p.balanceAmt)) return toast.error(`Amount for bill ${p.incomeTxn?.billNo || p.id} exceeds balance`);
-    }
-
-    setSettleSaving(true);
-    let successCount = 0;
-    try {
-      for (const p of selected) {
-        await api.post("/income/lab/payable-pymts", {
-          payableId: p.id,
-          amount: settleAmounts[p.id],
-          paymentModeId: settleMode,
-          paymentDate: settleDate,
-          transactionNo: settleTxnNo || undefined,
-          bankName: settleBank || undefined,
-          paidBy: settlePaidBy || undefined,
-          remarks: settleRemarks || undefined,
-        });
-        successCount++;
-      }
-      toast.success(`${successCount} payment(s) recorded`);
-      setSettleModalOpen(false);
-      fetchDoctorSummary(dashFromDate, dashToDate);
-      fetchDashboard(dashFromDate, dashToDate);
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || "Failed to record payment";
-      toast.error(msg);
-    } finally {
-      setSettleSaving(false);
-    }
-  };
 
   const fetchDashboard = useCallback(async (fd = dashFromDate, td = dashToDate) => {
     setDashLoading(true);
@@ -387,7 +254,7 @@ export default function IncomeLabPage() {
     setPaymentEntries((prev) => prev.map((e, i) => (i === idx ? { ...e, [field]: value } : e)));
   };
 
-  useEffect(() => { fetchDashboard(); fetchDoctorSummary(); fetchPaymentModes(); }, [fetchDashboard, fetchDoctorSummary]);
+  useEffect(() => { fetchDashboard(); fetchPaymentModes(); }, [fetchDashboard]);
 
   const handleBulkVerify = () => {
     if (selectedIds.size === 0) return;
@@ -464,16 +331,46 @@ export default function IncomeLabPage() {
   };
 
   useEffect(() => {
-    if (activeTab === "importlog") fetchImportLogs();
-  }, [activeTab, logPage]);
+    if (!hasSearched) {
+      setHasSearched(true);
+      setFromDate(dashFromDate);
+      setToDate(dashToDate);
+      fetchTxns(1, "", dashFromDate, dashToDate, txnPaymentFilter, txnStatusFilter);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const handleDashFilter = () => {
-    fetchDashboard(dashFromDate, dashToDate);
-    fetchDoctorSummary(dashFromDate, dashToDate);
+  const handleTxnMonthChange = (month: number) => {
+    setDashMonth(month);
+    const range = getMonthRange(dashYear, month);
+    setDashFromDate(range.from);
+    setDashToDate(range.to);
+    setFromDate(range.from);
+    setToDate(range.to);
+    setPage(1);
+    setHasSearched(true);
+    fetchDashboard(range.from, range.to);
+    fetchTxns(1, search, range.from, range.to, txnPaymentFilter, txnStatusFilter);
+  };
+
+  const handleTxnYearChange = (year: number) => {
+    setDashYear(year);
+    const range = getMonthRange(year, dashMonth);
+    setDashFromDate(range.from);
+    setDashToDate(range.to);
+    setFromDate(range.from);
+    setToDate(range.to);
+    setPage(1);
+    setHasSearched(true);
+    fetchDashboard(range.from, range.to);
+    fetchTxns(1, search, range.from, range.to, txnPaymentFilter, txnStatusFilter);
   };
 
   const handleSearch = () => {
     setPage(1);
+    setDashFromDate(fromDate);
+    setDashToDate(toDate);
+    fetchDashboard(fromDate, toDate);
     fetchTxns(1, search, fromDate, toDate, txnPaymentFilter, txnStatusFilter);
   };
 
@@ -482,7 +379,10 @@ export default function IncomeLabPage() {
     fetchTxns(p, search, fromDate, toDate, txnPaymentFilter, txnStatusFilter);
   };
 
-  const handleLogPageChange = (p: number) => setLogPage(p);
+  const handleLogPageChange = (p: number) => {
+    setLogPage(p);
+    fetchImportLogs(p);
+  };
 
   const handleCardClick = (paymentMode?: string) => {
     setTxnPaymentFilter(paymentMode || "");
@@ -490,7 +390,6 @@ export default function IncomeLabPage() {
     setSearch("");
     setFromDate(dashFromDate);
     setToDate(dashToDate);
-    setActiveTab("transactions");
     setPage(1);
     fetchTxns(1, "", dashFromDate, dashToDate, paymentMode || "", "");
   };
@@ -499,6 +398,11 @@ export default function IncomeLabPage() {
     setImportResult(null);
     setSelectedFile(null);
     setImportModalOpen(true);
+  };
+
+  const handleTableViewChange = (v: "transactions" | "logs") => {
+    setTableView(v);
+    if (v === "logs") fetchImportLogs();
   };
 
   const handleFileSelect = (file: File) => {
@@ -617,43 +521,38 @@ export default function IncomeLabPage() {
   return (
     <DashboardLayout>
       <>
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
             <div>
               <h1 className="text-2xl font-bold text-slate-800">LAB - Laboratory Income</h1>
               <p className="text-slate-400 text-sm mt-1">Manage Lab billing transactions</p>
             </div>
-          </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <button onClick={() => handleCardClick("CASH")} className="bg-white rounded-2xl border border-slate-200/60 p-4 hover:border-emerald-300 hover:shadow-md transition-all text-left">
+                <p className="text-xs font-medium text-slate-400">Cash</p>
+                <p className="text-lg font-bold text-emerald-600 mt-1">{formatCurrency(dashboard.cash)}</p>
+              </button>
+              <button onClick={() => handleCardClick("BANK")} className="bg-white rounded-2xl border border-slate-200/60 p-4 hover:border-blue-300 hover:shadow-md transition-all text-left">
+                <p className="text-xs font-medium text-slate-400">Bank</p>
+                <p className="text-lg font-bold text-blue-600 mt-1">{formatCurrency(dashboard.bank)}</p>
+              </button>
+              <button onClick={() => handleCardClick("CREDIT")} className="bg-white rounded-2xl border border-slate-200/60 p-4 hover:border-amber-300 hover:shadow-md transition-all text-left">
+                <p className="text-xs font-medium text-slate-400">Credit</p>
+                <p className="text-lg font-bold text-amber-600 mt-1">{formatCurrency(dashboard.credit)}</p>
+              </button>
+              <button onClick={() => handleCardClick()} className="bg-white rounded-2xl border border-slate-200/60 p-4 hover:border-indigo-300 hover:shadow-md transition-all text-left">
+                <p className="text-xs font-medium text-slate-400">Total</p>
+                <p className="text-lg font-bold text-indigo-600 mt-1">{formatCurrency(dashboard.total)}</p>
+              </button>
+              </div>
+            </div>
 
-          <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-6 max-w-2xl">
-            <button
-              onClick={() => setActiveTab("dashboard")}
-              className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === "dashboard" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-            >
-              <LayoutDashboard size={16} /> Dashboard
-            </button>
-            <button
-              onClick={() => setActiveTab("transactions")}
-              className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === "transactions" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-            >
-              <List size={16} /> Transactions
-            </button>
-            <button
-              onClick={() => setActiveTab("importlog")}
-              className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === "importlog" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-            >
-              <FileText size={16} /> LAB Data Import
-            </button>
-          </div>
-
-          {activeTab === "dashboard" && (
-            <>
-              <div className="bg-white rounded-2xl border border-slate-200/60 p-4 mb-6">
-                <div className="flex flex-col sm:flex-row gap-3 items-end">
-                  <div className="w-full sm:w-auto">
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Year</label>
+          <div className="flex flex-col lg:flex-row gap-4 mb-6">
+            <div className="bg-white rounded-2xl border border-slate-200/60 p-4 flex-1">
+            <div className="flex flex-col sm:flex-row gap-3 items-end">
+              <div className="w-full sm:w-auto">
                     <select
                       value={dashYear}
-                      onChange={(e) => setDashYear(parseInt(e.target.value))}
+                      onChange={(e) => handleTxnYearChange(parseInt(e.target.value))}
                       className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
                     >
                       {getYearOptions().map((y) => (
@@ -662,10 +561,9 @@ export default function IncomeLabPage() {
                     </select>
                   </div>
                   <div className="w-full sm:w-auto">
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Month</label>
                     <select
                       value={dashMonth}
-                      onChange={(e) => setDashMonth(parseInt(e.target.value))}
+                      onChange={(e) => handleTxnMonthChange(parseInt(e.target.value))}
                       className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
                     >
                       {MONTHS.map((m) => (
@@ -673,167 +571,7 @@ export default function IncomeLabPage() {
                       ))}
                     </select>
                   </div>
-                  <div className="w-full sm:w-auto">
-                    <label className="block text-xs font-medium text-slate-500 mb-1">From Date</label>
-                    <input
-                      type="date"
-                      value={dashFromDate}
-                      onChange={(e) => setDashFromDate(e.target.value)}
-                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-                    />
-                  </div>
-                  <div className="w-full sm:w-auto">
-                    <label className="block text-xs font-medium text-slate-500 mb-1">To Date</label>
-                    <input
-                      type="date"
-                      value={dashToDate}
-                      onChange={(e) => setDashToDate(e.target.value)}
-                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-                    />
-                  </div>
-                  <Button onClick={handleDashFilter} isLoading={dashLoading}>
-                    <Search size={16} className="mr-1" /> Filter
-                  </Button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-                <button
-                  onClick={() => handleCardClick("CASH")}
-                  className="bg-white rounded-2xl border border-slate-200/60 p-5 hover:border-emerald-300 hover:shadow-md transition-all text-left cursor-pointer"
-                >
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center">
-                      <Banknote size={20} className="text-emerald-500" />
-                    </div>
-                    <span className="text-sm font-medium text-slate-500">Cash</span>
-                  </div>
-                  <p className="text-xl font-bold text-slate-800">{formatCurrency(dashboard.cash)}</p>
-                  <p className="text-xs text-slate-400 mt-1">Click to view details</p>
-                </button>
-                <button
-                  onClick={() => handleCardClick("BANK")}
-                  className="bg-white rounded-2xl border border-slate-200/60 p-5 hover:border-blue-300 hover:shadow-md transition-all text-left cursor-pointer"
-                >
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center">
-                      <CreditCard size={20} className="text-blue-500" />
-                    </div>
-                    <span className="text-sm font-medium text-slate-500">Bank</span>
-                  </div>
-                  <p className="text-xl font-bold text-slate-800">{formatCurrency(dashboard.bank)}</p>
-                  <p className="text-xs text-slate-400 mt-1">Click to view details</p>
-                </button>
-                <button
-                  onClick={() => handleCardClick("CREDIT")}
-                  className="bg-white rounded-2xl border border-slate-200/60 p-5 hover:border-amber-300 hover:shadow-md transition-all text-left cursor-pointer"
-                >
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center">
-                      <Wallet size={20} className="text-amber-500" />
-                    </div>
-                    <span className="text-sm font-medium text-slate-500">Credit</span>
-                  </div>
-                  <p className="text-xl font-bold text-slate-800">{formatCurrency(dashboard.credit)}</p>
-                  <p className="text-xs text-slate-400 mt-1">Click to view details</p>
-                </button>
-                <button
-                  onClick={() => handleCardClick()}
-                  className="bg-white rounded-2xl border border-slate-200/60 p-5 hover:border-indigo-300 hover:shadow-md transition-all text-left cursor-pointer"
-                >
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center">
-                      <TrendingUp size={20} className="text-indigo-500" />
-                    </div>
-                    <span className="text-sm font-medium text-slate-500">Total</span>
-                  </div>
-                  <p className="text-xl font-bold text-slate-800">{formatCurrency(dashboard.total)}</p>
-                  <p className="text-xs text-slate-400 mt-1">Click to view details</p>
-                </button>
-                <button
-                  onClick={() => handleCardClick()}
-                  className="bg-white rounded-2xl border border-slate-200/60 p-5 hover:border-red-300 hover:shadow-md transition-all text-left cursor-pointer"
-                >
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 bg-red-50 rounded-xl flex items-center justify-center">
-                      <Stethoscope size={20} className="text-red-500" />
-                    </div>
-                    <span className="text-sm font-medium text-slate-500">Doctor Fee Liability</span>
-                  </div>
-                  <p className="text-xl font-bold text-red-600">{formatCurrency(dashboard.doctorFeeLiability)}</p>
-                  <p className="text-xs text-slate-400 mt-1">Click to view details</p>
-                </button>
-              </div>
-
-              <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden mt-6">
-                <div className="px-5 py-4 border-b border-slate-200/60 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Stethoscope size={18} className="text-slate-500" />
-                    <h2 className="font-semibold text-slate-700">Doctor Fee Summary</h2>
-                  </div>
-                  <span className="text-sm font-medium text-slate-500">Grand Total: <span className="text-red-600">{formatCurrency(doctorGrandTotal)}</span></span>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-200/60">
-                        <th className="text-left px-5 py-3 font-semibold text-slate-500 text-xs uppercase tracking-wider">#</th>
-                        <th className="text-left px-5 py-3 font-semibold text-slate-500 text-xs uppercase tracking-wider">Doctor Name</th>
-                        <th className="text-left px-5 py-3 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden sm:table-cell">Patients</th>
-                        <th className="text-center px-5 py-3 font-semibold text-slate-500 text-xs uppercase tracking-wider">Pending Bills</th>
-                        <th className="text-right px-5 py-3 font-semibold text-slate-500 text-xs uppercase tracking-wider">Pending Amount</th>
-                        <th className="text-right px-5 py-3 font-semibold text-slate-500 text-xs uppercase tracking-wider">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {doctorSummaryLoading ? (
-                        <tr><td colSpan={6} className="text-center py-8 text-slate-400">
-                          <div className="flex items-center justify-center gap-2">
-                            <div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin" />
-                            Loading...
-                          </div>
-                        </td></tr>
-                      ) : doctorSummary.length === 0 ? (
-                        <tr><td colSpan={6} className="text-center py-8 text-slate-400">No pending payables</td></tr>
-                      ) : (
-                        doctorSummary.map((s, idx) => (
-                          <tr key={s.doctor.id} className="hover:bg-slate-50/80">
-                            <td className="px-5 py-3 text-slate-400">{idx + 1}</td>
-                            <td className="px-5 py-3 font-medium text-slate-700">{s.doctor.name}</td>
-                            <td className="px-5 py-3 text-slate-500 hidden sm:table-cell text-xs">
-                              {s.patients.length <= 3
-                                ? s.patients.join(", ")
-                                : `${s.patients.slice(0, 3).join(", ")} ...`
-                              }
-                            </td>
-                            <td className="px-5 py-3 text-center">
-                              <span className="inline-block px-2.5 py-1 rounded-full text-xs font-medium bg-red-50 text-red-600">{s.pendingCount}</span>
-                            </td>
-                            <td className="px-5 py-3 text-right font-medium text-red-600">{formatCurrency(s.pendingAmount)}</td>
-                            <td className="px-5 py-3 text-right">
-                              <button
-                                onClick={() => openSettleModal(s.doctor)}
-                                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 transition-colors"
-                              >
-                                Settle
-                              </button>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </>
-          )}
-
-          {activeTab === "transactions" && (
-            <>
-              <div className="bg-white rounded-2xl border border-slate-200/60 p-4 mb-6">
-                <div className="flex flex-col sm:flex-row gap-3 items-end">
                   <div className="flex-1 w-full sm:max-w-xs">
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Search</label>
                     <div className="relative">
                       <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                       <input
@@ -847,20 +585,18 @@ export default function IncomeLabPage() {
                     </div>
                   </div>
                   <div className="w-full sm:w-auto">
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Payment Mode</label>
                     <select
                       value={txnPaymentFilter}
                       onChange={(e) => setTxnPaymentFilter(e.target.value)}
                       className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
                     >
-                      <option value="">All Modes</option>
+                      <option value="">All Payments</option>
                       <option value="CASH">Cash</option>
                       <option value="BANK">Bank</option>
                       <option value="CREDIT">Credit</option>
                     </select>
                   </div>
                   <div className="w-full sm:w-auto">
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Txn Status</label>
                     <select
                       value={txnStatusFilter}
                       onChange={(e) => setTxnStatusFilter(e.target.value)}
@@ -874,7 +610,6 @@ export default function IncomeLabPage() {
                     </select>
                   </div>
                   <div className="w-full sm:w-auto">
-                    <label className="block text-xs font-medium text-slate-500 mb-1">From Date</label>
                     <input
                       type="date"
                       value={fromDate}
@@ -883,7 +618,6 @@ export default function IncomeLabPage() {
                     />
                   </div>
                   <div className="w-full sm:w-auto">
-                    <label className="block text-xs font-medium text-slate-500 mb-1">To Date</label>
                     <input
                       type="date"
                       value={toDate}
@@ -894,10 +628,33 @@ export default function IncomeLabPage() {
                   <Button onClick={handleSearch} isLoading={loading}>
                     <Search size={16} className="mr-1" /> Search
                   </Button>
-                </div>
-              </div>
+            </div>
+            </div>
+            <div className="bg-white rounded-2xl border border-slate-200/60 p-4 flex flex-wrap gap-2 items-center content-center justify-center lg:w-[450px]">
+                <button
+                  onClick={openImportModal}
+                  disabled={importing}
+                  className="inline-flex items-center justify-center px-4 py-2.5 rounded-xl text-sm font-semibold transition-all border bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Download size={16} className="mr-1" /> Import Lab Bills
+                </button>
+                <button
+                  onClick={() => handleTableViewChange(tableView === "transactions" ? "logs" : "transactions")}
+                  title={tableView === "transactions" ? "View Import Logs" : "View Transactions"}
+                  className={`inline-flex items-center justify-center px-4 py-2.5 rounded-xl font-semibold transition-all border ${
+                    tableView === "logs"
+                      ? "bg-gradient-to-r from-indigo-500 to-indigo-600 text-white border-transparent shadow-md shadow-indigo-500/30"
+                      : "bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100"
+                  }`}
+                >
+                  {tableView === "transactions" ? <Eye size={24} /> : <EyeOff size={24} />}
+                </button>
+            </div>
+          </div>
 
-              {selectedIds.size > 0 && (
+              {tableView === "transactions" && (
+                <>
+                {selectedIds.size > 0 && (
                 <div className="flex items-center gap-3 px-4 py-3 bg-indigo-50/50 border border-indigo-100 rounded-xl mb-4">
                   <span className="text-sm font-medium text-indigo-700">{selectedIds.size} selected</span>
                   <Button size="sm" onClick={handleBulkVerify} isLoading={bulkVerifying}>
@@ -1015,105 +772,101 @@ export default function IncomeLabPage() {
                   <Pagination page={page} totalPages={pagination.pages} total={pagination.total} limit={10} onPageChange={handlePageChange} />
                 )}
               </div>
-            </>
-          )}
+                </>
+              )}
 
-          {activeTab === "importlog" && (
-            <>
-              <div className="flex flex-col sm:flex-row justify-end gap-3 mb-6">
-                <Button onClick={openImportModal}>
-                  <Upload size={16} className="mr-2" /> LAB Billing Report
-                </Button>
-              </div>
+              {tableView === "logs" && (
+                <>
+                  <h2 className="text-lg font-bold text-slate-800 mb-4">Import History</h2>
 
-              <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-200/60">
-                        <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">File Name</th>
-                        <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden sm:table-cell">Type</th>
-                        <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Total</th>
-                        <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">
-                          <span className="text-emerald-500">Inserted</span>
-                        </th>
-                        <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden sm:table-cell">
-                          <span className="text-amber-500">Updated</span>
-                        </th>
-                        <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">
-                          <span className="text-slate-400">Skipped</span>
-                        </th>
-                        <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">
-                          <span className="text-red-500">Failed</span>
-                        </th>
-                        <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden md:table-cell">Imported At</th>
-                        <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {logLoading ? (
-                        <tr><td colSpan={9} className="text-center py-12 text-slate-400">
-                          <div className="flex items-center justify-center gap-2">
-                            <div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin" />
-                            Loading...
-                          </div>
-                        </td></tr>
-                      ) : importLogs.length === 0 ? (
-                        <tr><td colSpan={9} className="text-center py-12 text-slate-400">No import logs found</td></tr>
-                      ) : (
-                        importLogs.map((log) => (
-                          <tr key={log.id} className="hover:bg-slate-50/80">
-                            <td className="px-5 py-3.5 font-medium text-slate-700 max-w-[200px] truncate">{log.fileName}</td>
-                            <td className="px-5 py-3.5 hidden sm:table-cell">
-                              <span className="inline-block px-2.5 py-1 bg-indigo-50 text-indigo-600 rounded-full text-xs font-medium">{getFileTypeLabel(log.fileType)}</span>
-                            </td>
-                            <td className="px-5 py-3.5 text-center text-slate-700">{log.totalRecords}</td>
-                            <td className="px-5 py-3.5 text-center">
-                              <span className="inline-flex items-center gap-1 text-emerald-600 font-medium">
-                                {log.inserted}
-                              </span>
-                            </td>
-                            <td className="px-5 py-3.5 text-center hidden sm:table-cell">
-                              <span className="inline-flex items-center gap-1 text-amber-600 font-medium">
-                                {log.updated}
-                              </span>
-                            </td>
-                            <td className="px-5 py-3.5 text-center">
-                              <span className={`inline-flex items-center gap-1 font-medium ${log.skipped > 0 ? "text-slate-500" : "text-slate-300"}`}>
-                                {log.skipped}
-                              </span>
-                            </td>
-                            <td className="px-5 py-3.5 text-center">
-                              <span className={`inline-flex items-center gap-1 font-medium ${log.failed > 0 ? "text-red-600" : "text-slate-400"}`}>
-                                {log.failed}
-                              </span>
-                            </td>
-                            <td className="px-5 py-3.5 text-slate-500 hidden md:table-cell">{formatDateTime(log.importStarted)}</td>
-                            <td className="px-5 py-3.5 text-center">
-                              {log.failed > 0 ? (
-                                <button
-                                  onClick={() => handleViewErrors(log)}
-                                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-medium hover:bg-red-100 transition-colors"
-                                >
-                                  <Eye size={14} /> View Errors
-                                </button>
-                              ) : (
-                                <span className="text-xs text-slate-400">No errors</span>
-                              )}
-                            </td>
+                  <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-slate-200/60">
+                            <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">File Name</th>
+                            <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden sm:table-cell">Type</th>
+                            <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Total</th>
+                            <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">
+                              <span className="text-emerald-500">Inserted</span>
+                            </th>
+                            <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden sm:table-cell">
+                              <span className="text-amber-500">Updated</span>
+                            </th>
+                            <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">
+                              <span className="text-slate-400">Skipped</span>
+                            </th>
+                            <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">
+                              <span className="text-red-500">Failed</span>
+                            </th>
+                            <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden md:table-cell">Imported At</th>
+                            <th className="text-center px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Actions</th>
                           </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {logLoading ? (
+                            <tr><td colSpan={9} className="text-center py-12 text-slate-400">
+                              <div className="flex items-center justify-center gap-2">
+                                <div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin" />
+                                Loading...
+                              </div>
+                            </td></tr>
+                          ) : importLogs.length === 0 ? (
+                            <tr><td colSpan={9} className="text-center py-12 text-slate-400">No import logs found</td></tr>
+                          ) : (
+                            importLogs.map((log) => (
+                              <tr key={log.id} className="hover:bg-slate-50/80">
+                                <td className="px-5 py-3.5 font-medium text-slate-700 max-w-[200px] truncate">{log.fileName}</td>
+                                <td className="px-5 py-3.5 hidden sm:table-cell">
+                                  <span className="inline-block px-2.5 py-1 bg-indigo-50 text-indigo-600 rounded-full text-xs font-medium">{getFileTypeLabel(log.fileType)}</span>
+                                </td>
+                                <td className="px-5 py-3.5 text-center text-slate-700">{log.totalRecords}</td>
+                                <td className="px-5 py-3.5 text-center">
+                                  <span className="inline-flex items-center gap-1 text-emerald-600 font-medium">
+                                    {log.inserted}
+                                  </span>
+                                </td>
+                                <td className="px-5 py-3.5 text-center hidden sm:table-cell">
+                                  <span className="inline-flex items-center gap-1 text-amber-600 font-medium">
+                                    {log.updated}
+                                  </span>
+                                </td>
+                                <td className="px-5 py-3.5 text-center">
+                                  <span className={`inline-flex items-center gap-1 font-medium ${log.skipped > 0 ? "text-slate-500" : "text-slate-300"}`}>
+                                    {log.skipped}
+                                  </span>
+                                </td>
+                                <td className="px-5 py-3.5 text-center">
+                                  <span className={`inline-flex items-center gap-1 font-medium ${log.failed > 0 ? "text-red-600" : "text-slate-400"}`}>
+                                    {log.failed}
+                                  </span>
+                                </td>
+                                <td className="px-5 py-3.5 text-slate-500 hidden md:table-cell">{formatDateTime(log.importStarted)}</td>
+                                <td className="px-5 py-3.5 text-center">
+                                  {log.failed > 0 ? (
+                                    <button
+                                      onClick={() => handleViewErrors(log)}
+                                      className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-medium hover:bg-red-100 transition-colors"
+                                    >
+                                      <Eye size={14} /> View Errors
+                                    </button>
+                                  ) : (
+                                    <span className="text-xs text-slate-400">No errors</span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
 
-                {logPagination.pages > 1 && (
-                  <Pagination page={logPage} totalPages={logPagination.pages} total={logPagination.total} limit={10} onPageChange={handleLogPageChange} />
-                )}
-              </div>
-            </>
-          )}
+                    {logPagination.pages > 1 && (
+                      <Pagination page={logPage} totalPages={logPagination.pages} total={logPagination.total} limit={10} onPageChange={handleLogPageChange} />
+                    )}
+                  </div>
+                </>
+              )}
 
           <Modal isOpen={showConfirmModal} onClose={() => setShowConfirmModal(false)} title="Confirm Verification">
             <div className="space-y-4">
@@ -1371,161 +1124,6 @@ export default function IncomeLabPage() {
               </div>
             ) : (
               <p className="text-center text-slate-400 py-8">Failed to load transaction details</p>
-            )}
-          </Modal>
-
-          <Modal isOpen={settleModalOpen} onClose={() => setSettleModalOpen(false)} title={`Settle - ${settleDoctor?.name || ""}`} maxWidth="max-w-4xl">
-            {settleLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="w-6 h-6 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin" />
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl text-sm">
-                  <span className="text-slate-500">Total Pending: <span className="font-bold text-red-600">{formatCurrency(settleGrandTotal)}</span></span>
-                  <span className="text-slate-500">Selected: <span className="font-bold text-indigo-600">{formatCurrency(settleTotalSelected)}</span></span>
-                </div>
-
-                {settlePayables.length === 0 ? (
-                  <p className="text-center text-slate-400 py-4">No pending payables for this doctor</p>
-                ) : (
-                  <>
-                    <div className="border border-slate-200 rounded-xl overflow-hidden max-h-72 overflow-y-auto">
-                      <table className="w-full text-xs">
-                        <thead>
-                          <tr className="bg-slate-50 border-b border-slate-200 sticky top-0">
-                            <th className="px-3 py-2 w-8">
-                              <input
-                                type="checkbox"
-                                checked={settleSelected.size === settlePayables.length && settlePayables.length > 0}
-                                onChange={toggleSettleAll}
-                                className="accent-indigo-500"
-                              />
-                            </th>
-                            <th className="text-left px-3 py-2 font-medium text-slate-500">Bill No</th>
-                            <th className="text-left px-3 py-2 font-medium text-slate-500">Patient</th>
-                            <th className="text-right px-3 py-2 font-medium text-slate-500">Billed</th>
-                            <th className="text-right px-3 py-2 font-medium text-slate-500">Balance</th>
-                            <th className="text-right px-3 py-2 font-medium text-slate-500">Pay Amount</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {settlePayables.map((p) => {
-                            const checked = settleSelected.has(p.id);
-                            const maxBal = Number(p.balanceAmt);
-                            const payVal = parseFloat(settleAmounts[p.id]) || 0;
-                            const overLimit = payVal > maxBal;
-                            return (
-                              <tr key={p.id} className={`transition-colors ${checked ? "bg-indigo-50/60" : "hover:bg-slate-50"}`}>
-                                <td className="px-3 py-2">
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={() => toggleSettleSelect(p.id)}
-                                    className="accent-indigo-500"
-                                  />
-                                </td>
-                                <td className="px-3 py-2 font-medium text-slate-700">{p.incomeTxn?.billNo || "-"}</td>
-                                <td className="px-3 py-2 text-slate-500">{p.incomeTxn?.patient?.name || "-"}</td>
-                                <td className="px-3 py-2 text-right font-medium text-slate-700">{formatCurrency(Number(p.billedAmt))}</td>
-                                <td className="px-3 py-2 text-right font-medium text-red-600">{formatCurrency(maxBal)}</td>
-                                <td className="px-3 py-2 text-right">
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    max={maxBal}
-                                    step="0.01"
-                                    value={settleAmounts[p.id] || ""}
-                                    disabled={!checked}
-                                    onChange={(e) => {
-                                      const val = e.target.value;
-                                      setSettleAmounts((prev) => ({ ...prev, [p.id]: val }));
-                                    }}
-                                    className={`w-28 px-2 py-1 text-right text-xs bg-white border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 disabled:bg-slate-100 disabled:text-slate-400 ${overLimit ? "border-red-400" : "border-slate-200"}`}
-                                  />
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    <div className="border-t border-slate-200 pt-4 space-y-3">
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-medium text-slate-500 mb-1">Payment Mode <span className="text-red-500">*</span></label>
-                          <select
-                            value={settleMode}
-                            onChange={(e) => setSettleMode(e.target.value)}
-                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                          >
-                            <option value="">Select mode</option>
-                            {paymentModes.map((m) => (
-                              <option key={m.id} value={m.id}>{m.name}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-slate-500 mb-1">Payment Date</label>
-                          <input
-                            type="date"
-                            value={settleDate}
-                            onChange={(e) => setSettleDate(e.target.value)}
-                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                          />
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-3 gap-3">
-                        <div>
-                          <label className="block text-xs font-medium text-slate-500 mb-1">Transaction No</label>
-                          <input
-                            type="text"
-                            value={settleTxnNo}
-                            onChange={(e) => setSettleTxnNo(e.target.value)}
-                            placeholder="Ref/UPI/Chq No"
-                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-slate-500 mb-1">Bank Name</label>
-                          <input
-                            type="text"
-                            value={settleBank}
-                            onChange={(e) => setSettleBank(e.target.value)}
-                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-slate-500 mb-1">Paid By</label>
-                          <input
-                            type="text"
-                            value={settlePaidBy}
-                            onChange={(e) => setSettlePaidBy(e.target.value)}
-                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-slate-500 mb-1">Remarks</label>
-                        <input
-                          type="text"
-                          value={settleRemarks}
-                          onChange={(e) => setSettleRemarks(e.target.value)}
-                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="flex justify-end gap-2 pt-2">
-                      <Button variant="secondary" onClick={() => setSettleModalOpen(false)}>Cancel</Button>
-                      <Button onClick={handleSettlePay} isLoading={settleSaving} disabled={settleSelected.size === 0 || !settleMode}>
-                        Record {settleSelected.size > 0 ? `${settleSelected.size} ` : ""}Payment(s)
-                      </Button>
-                    </div>
-                  </>
-                )}
-              </div>
             )}
           </Modal>
 

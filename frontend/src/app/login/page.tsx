@@ -90,8 +90,15 @@ export default function LoginPage() {
 
       <div className="w-full max-w-md relative z-10">
         <div className="text-center mb-10">
-          <div className="w-full max-w-md h-40 bg-white rounded-3xl flex items-center justify-center mx-auto mb-5 shadow-2xl shadow-indigo-500/30 p-4 relative">
-            <Image src="/gcclogo.png" alt="Logo" fill className="object-contain p-4" sizes="(max-width: 768px) 100vw, 448px" priority />
+          <div className="w-full max-w-md h-40  rounded-3xl flex items-center justify-center mx-auto mb-5 shadow-2xl shadow-indigo-500/30 p-4 relative">
+            <Image
+              src="/logo-white.png"
+              alt="Logo"
+              fill
+              className="object-contain p-4"
+              sizes="(max-width: 768px) 100vw, 448px"
+              priority
+            />
           </div>
           <h1 className="text-3xl font-bold text-white tracking-tight">FinTrackr</h1>
           <p className="text-slate-400 mt-2">Sign in to your account</p>
@@ -170,7 +177,9 @@ export default function LoginPage() {
           )}
         </div>
 
-        <p className="text-center text-slate-500 text-xs mt-6">FinTrackr v1.0</p>
+        <p className="text-center text-slate-500 text-sm mt-6">
+          FinTrackr v1.0 · Track. Verify. Approve. <span className="text-indigo-400 font-bold"> ~ MRSoft!</span>
+        </p>
       </div>
 
       {/* iOS Install Instructions Modal */}
