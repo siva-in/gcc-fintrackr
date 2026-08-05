@@ -83,10 +83,8 @@ const getReceivableReport = async (req, res) => {
     const andConditions = [];
 
     if (status) {
-      if (status === "PENDING") andConditions.push({ status: "PENDING" });
-      else andConditions.push({ status: "PAID" });
-    } else {
-      andConditions.push({ status: "PENDING" });
+      const statuses = String(status).split(",").map((s) => s.trim().toUpperCase()).filter(Boolean);
+      if (statuses.length > 0) andConditions.push({ status: { in: statuses } });
     }
 
     if (arType) {
@@ -325,4 +323,93 @@ const getIncomeSummary = async (req, res) => {
   }
 };
 
-module.exports = { getPayableReport, getReceivableReport, getIncomeSources, getIPAdmissionReport, getIncomeSummary };
+const getBookOfAccounts = async (req, res) => {
+  try {
+    const { source = "ALL", fromDate, toDate } = req.query;
+
+    const dateFilter = {};
+    if (fromDate) dateFilter.gte = new Date(`${fromDate}T00:00:00.000Z`);
+    if (toDate) dateFilter.lte = new Date(`${toDate}T23:59:59.999Z`);
+
+    const paymentModes = await prisma.paymentMode.findMany();
+    const modeCodeById = {};
+    paymentModes.forEach((m) => { modeCodeById[m.id] = m.code; });
+
+    const isCash = (code) => code === "CASH";
+    const isBank = (code) => ["BANK", "NEFT", "CHEQUE", "UPI", "CARD"].includes(code);
+    const split = (rows) => {
+      let cash = 0, bank = 0, total = 0;
+      for (const r of rows) {
+        const amt = parseFloat(String(r._sum.amount)) || 0;
+        const code = modeCodeById[r.paymentModeId];
+        total += amt;
+        if (isCash(code)) cash += amt;
+        else if (isBank(code)) bank += amt;
+      }
+      return { cash, bank, total };
+    };
+
+    const requested = source === "ALL"
+      ? [["OP", "Out Patient"], ["IP", "In Patient"], ["LAB", "Lab"], ["PHARMACY", "Pharma"]]
+      : [[source, source]];
+
+    const advSource = await prisma.incomeSource.findFirst({ where: { code: "ADV" } });
+    let advanceCollected = { cash: 0, bank: 0, total: 0 };
+    if (advSource) {
+      const advPmts = await prisma.rcvdPymt.groupBy({
+        by: ["paymentModeId"],
+        where: { paymentDate: dateFilter, incomeTxn: { incomeSourceId: advSource.id } },
+        _sum: { amount: true },
+      });
+      advanceCollected = split(advPmts);
+    }
+
+    const rows = [];
+    for (const [code, name] of requested) {
+      let sourceRec = await prisma.incomeSource.findFirst({ where: { code } });
+      if (!sourceRec && code === "PHARMACY") {
+        sourceRec = await prisma.incomeSource.findFirst({ where: { code: "PHARMA" } });
+      }
+      if (!sourceRec) continue;
+      const sid = sourceRec.id;
+
+      const [newCreditAgg, advAdjAgg, creditPmts, incomePmts] = await Promise.all([
+        prisma.receivable.aggregate({
+          where: { billDate: dateFilter, incomeTxn: { incomeSourceId: sid } },
+          _sum: { dueAmt: true },
+        }),
+        prisma.incomeTxn.aggregate({
+          where: { incomeSourceId: sid, billDate: dateFilter },
+          _sum: { advAdjt: true },
+        }),
+        prisma.rcvlPymt.groupBy({
+          by: ["paymentModeId"],
+          where: { paymentDate: dateFilter, receivable: { incomeTxn: { incomeSourceId: sid } } },
+          _sum: { amount: true },
+        }),
+        prisma.rcvdPymt.groupBy({
+          by: ["paymentModeId"],
+          where: { paymentDate: dateFilter, incomeTxn: { incomeSourceId: sid } },
+          _sum: { amount: true },
+        }),
+      ]);
+
+      rows.push({
+        sourceCode: code,
+        source: name,
+        newCredit: parseFloat(String(newCreditAgg._sum.dueAmt)) || 0,
+        advanceAdjusted: parseFloat(String(advAdjAgg._sum.advAdjt)) || 0,
+        advanceCollected: code === "IP" ? advanceCollected : { cash: 0, bank: 0, total: 0 },
+        creditCollected: split(creditPmts),
+        income: split(incomePmts),
+      });
+    }
+
+    res.json({ rows });
+  } catch (error) {
+    console.error("GetBookOfAccounts error:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+module.exports = { getPayableReport, getReceivableReport, getIncomeSources, getIPAdmissionReport, getIncomeSummary, getBookOfAccounts };

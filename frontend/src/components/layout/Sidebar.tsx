@@ -49,8 +49,9 @@ const companyNavItems: NavItem[] = [
       { href: "/income/op", label: "OP" },
       { href: "/income/ip", label: "IP" },
       { href: "/income/lab", label: "Lab" },
-      { href: "/income/advance", label: "Advance" },
+      { href: "/income/advance", label: "Advance & Credit" },
       { href: "/income/pharma", label: "Pharma" },
+      { href: "/income/book-of-accounts", label: "Book Of Accounts" },
     ],
   },
 ];

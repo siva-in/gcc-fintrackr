@@ -87,6 +87,7 @@ export default function ReportsPage() {
   const [partyTypeFilter, setPartyTypeFilter] = useState("");
   const [arTypeFilter, setArTypeFilter] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const [sources, setSources] = useState<{ id: number; code: string; name: string }[]>([]);
 
   const fetchPayables = useCallback(async () => {
@@ -122,6 +123,7 @@ export default function ReportsPage() {
       if (search) params.set("search", search);
       if (arTypeFilter) params.set("arType", arTypeFilter);
       if (sourceFilter) params.set("source", sourceFilter);
+      if (statusFilter) params.set("status", statusFilter);
 
       const { data } = await api.get(`/reports/receivables?${params.toString()}`);
       setReceivables(data.receivables || []);
@@ -132,7 +134,7 @@ export default function ReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, fromDate, toDate, search, arTypeFilter, sourceFilter]);
+  }, [page, fromDate, toDate, search, arTypeFilter, sourceFilter, statusFilter]);
 
   const fetchIPAdmissions = useCallback(async () => {
     setLoading(true);
@@ -161,13 +163,13 @@ export default function ReportsPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [tab, fromDate, toDate, search, partyTypeFilter, arTypeFilter, sourceFilter]);
+  }, [tab, fromDate, toDate, search, partyTypeFilter, arTypeFilter, sourceFilter, statusFilter]);
 
   useEffect(() => {
     if (tab === "payables") fetchPayables();
     else if (tab === "receivables") fetchReceivables();
     else fetchIPAdmissions();
-  }, [tab, page, fromDate, toDate, search, partyTypeFilter, arTypeFilter, sourceFilter, fetchPayables, fetchReceivables, fetchIPAdmissions]);
+  }, [tab, page, fromDate, toDate, search, partyTypeFilter, arTypeFilter, sourceFilter, statusFilter, fetchPayables, fetchReceivables, fetchIPAdmissions]);
 
   const formatCurrency = (val: number | string) => {
     return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(Number(val));
@@ -258,6 +260,13 @@ export default function ReportsPage() {
                 </option>
               ))}
             </select>
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500">
+              <option value="">All Status</option>
+              <option value="PENDING">Unpaid</option>
+              <option value="PARTIALLY_PAID">Partially Paid</option>
+              <option value="PAID">Paid</option>
+              <option value="CANCELLED">Cancelled</option>
+            </select>
           </>
         )}
         <Button variant="secondary" onClick={() => setPage(1)}>Filter</Button>
@@ -341,7 +350,7 @@ export default function ReportsPage() {
               <p className="text-xl font-bold text-amber-600">{formatCurrency(receivableSummary.totalBalanceAmt)}</p>
             </div>
             <div className="bg-white rounded-2xl border border-slate-200/60 p-4">
-              <label className="block text-xs font-medium text-slate-500 mb-1">Pending Count</label>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Record Count</label>
               <p className="text-xl font-bold text-slate-800">{receivableSummary.count}</p>
             </div>
           </div>
@@ -363,6 +372,7 @@ export default function ReportsPage() {
                       <th className="text-left px-4 py-3 font-semibold text-slate-500 text-xs uppercase tracking-wider">Patient</th>
                       <th className="text-left px-4 py-3 font-semibold text-slate-500 text-xs uppercase tracking-wider">Source</th>
                       <th className="text-right px-4 py-3 font-semibold text-slate-500 text-xs uppercase tracking-wider">Due</th>
+                      <th className="text-right px-4 py-3 font-semibold text-slate-500 text-xs uppercase tracking-wider">Paid</th>
                       <th className="text-right px-4 py-3 font-semibold text-slate-500 text-xs uppercase tracking-wider">Balance</th>
                       <th className="text-left px-4 py-3 font-semibold text-slate-500 text-xs uppercase tracking-wider">Due Date</th>
                       <th className="text-left px-4 py-3 font-semibold text-slate-500 text-xs uppercase tracking-wider">Status</th>
@@ -382,6 +392,7 @@ export default function ReportsPage() {
                         </td>
                         <td className="px-4 py-3 text-slate-600">{r.incomeTxn?.incomeSource?.code || "-"}</td>
                         <td className="px-4 py-3 text-right font-medium text-slate-700">{formatCurrency(r.dueAmt)}</td>
+                        <td className="px-4 py-3 text-right font-medium text-emerald-600">{formatCurrency(Number(r.dueAmt) - Number(r.balanceAmt))}</td>
                         <td className="px-4 py-3 text-right font-medium text-amber-600">{formatCurrency(r.balanceAmt)}</td>
                         <td className="px-4 py-3 text-slate-600">{formatDate(r.dueDate)}</td>
                         <td className="px-4 py-3">{getStatusBadge(r.status)}</td>

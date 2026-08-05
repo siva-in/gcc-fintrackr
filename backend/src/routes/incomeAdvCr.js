@@ -5,7 +5,7 @@ const {
   importAdvBilling, getAdvDashboard, getAdvTxns, getAdvTxnDetail,
   getAdvImportLogs, getAdvImportErrors, getAdvPaymentModes,
   bulkRealiseAdvTxns,
-} = require("../controllers/incomeAdvController");
+} = require("../controllers/incomeAdvCrController");
 const { authenticate, requireCompanyRole } = require("../middleware/auth");
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });

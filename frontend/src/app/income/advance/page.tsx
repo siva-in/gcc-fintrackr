@@ -16,6 +16,7 @@ interface Dashboard {
   bank: number;
   card: number;
   paymentModes: { code: string; name: string; total: number }[];
+  creditCollected: number;
   total: number;
 }
 
@@ -57,6 +58,24 @@ interface ImportErrorEntry {
   reason: string;
 }
 
+interface RcvPayment {
+  id: number;
+  amount: number | null;
+  paymentDate: string | null;
+  paymentMode: { code: string; name: string } | null;
+  receivable: {
+    id: number;
+    dueAmt: number | null;
+    balanceAmt: number | null;
+    status: string;
+    incomeTxn: {
+      billNo: string;
+      patient: { name: string } | null;
+      ipAdm: { ipNo: string } | null;
+    } | null;
+  } | null;
+}
+
 const MONTHS = [
   { value: "1", label: "January" }, { value: "2", label: "February" }, { value: "3", label: "March" },
   { value: "4", label: "April" }, { value: "5", label: "May" }, { value: "6", label: "June" },
@@ -85,7 +104,7 @@ export default function IncomeAdvancePage() {
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth() + 1;
   const [tableView, setTableView] = useState<"transactions" | "logs">("transactions");
-  const [dashboard, setDashboard] = useState<Dashboard>({ unrealised: 0, realised: 0, cash: 0, bank: 0, card: 0, paymentModes: [], total: 0 });
+  const [dashboard, setDashboard] = useState<Dashboard>({ unrealised: 0, realised: 0, cash: 0, bank: 0, card: 0, paymentModes: [], creditCollected: 0, total: 0 });
   const [dashYear, setDashYear] = useState(currentYear);
   const [dashMonth, setDashMonth] = useState(currentMonth);
   const [dashFromDate, setDashFromDate] = useState(() => getMonthRange(currentYear, currentMonth).from);
@@ -101,6 +120,7 @@ export default function IncomeAdvancePage() {
   const [txnPymtStatusFilter, setTxnPymtStatusFilter] = useState("");
   const [page, setPage] = useState(1);
   const [hasSearched, setHasSearched] = useState(false);
+  const [rcvPayments, setRcvPayments] = useState<RcvPayment[]>([]);
 
   const [importLogs, setImportLogs] = useState<ImportLogEntry[]>([]);
   const [logPagination, setLogPagination] = useState({ total: 0, page: 1, pages: 1 });
@@ -130,7 +150,7 @@ export default function IncomeAdvancePage() {
       const params = new URLSearchParams();
       if (fd) params.set("fromDate", fd);
       if (td) params.set("toDate", td);
-      const { data } = await api.get(`/income/adv/dashboard?${params.toString()}`);
+      const { data } = await api.get(`/income/advandcrcol/dashboard?${params.toString()}`);
       setDashboard(data);
     } catch {
       toast.error("Failed to load dashboard");
@@ -150,8 +170,9 @@ export default function IncomeAdvancePage() {
       if (td) params.set("toDate", td);
       if (pm) params.set("paymentMode", pm);
       if (ps) params.set("pymtStatus", ps);
-      const { data } = await api.get(`/income/adv/txns?${params.toString()}`);
+      const { data } = await api.get(`/income/advandcrcol/txns?${params.toString()}`);
       setTxns(data.txns || []);
+      setRcvPayments(data.rcvPayments || []);
       setPagination(data.pagination || { total: 0, page: 1, pages: 1 });
     } catch {
       toast.error("Failed to load transactions");
@@ -163,7 +184,7 @@ export default function IncomeAdvancePage() {
   const fetchImportLogs = async (p = logPage) => {
     setLogLoading(true);
     try {
-      const { data } = await api.get(`/income/adv/import-logs?page=${p}&limit=10`);
+      const { data } = await api.get(`/income/advandcrcol/import-logs?page=${p}&limit=10`);
       setImportLogs(data.logs || []);
       setLogPagination(data.pagination || { total: 0, page: 1, pages: 1 });
     } catch {
@@ -260,7 +281,7 @@ export default function IncomeAdvancePage() {
     try {
       const formData = new FormData();
       formData.append("file", selectedFile);
-      const endpoint = importType === "ipadm" ? "/income/ip/import-adm" : "/income/adv/import";
+      const endpoint = importType === "ipadm" ? "/income/ip/import-adm" : "/income/advandcrcol/import";
       const { data } = await api.post(endpoint, formData, { headers: { "Content-Type": "multipart/form-data" } });
       setImportResult(data);
       setSelectedFile(null);
@@ -281,7 +302,7 @@ export default function IncomeAdvancePage() {
     setSelectedLogErrors([]);
     setErrorLoading(true);
     try {
-      const { data } = await api.get(`/income/adv/import-logs/${log.id}/errors`);
+      const { data } = await api.get(`/income/advandcrcol/import-logs/${log.id}/errors`);
       setSelectedLogErrors(data.errors || []);
     } catch {
       toast.error("Failed to load errors");
@@ -321,10 +342,10 @@ export default function IncomeAdvancePage() {
       <div>
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-slate-800">Advance Collection</h1>
+            <h1 className="text-2xl font-bold text-slate-800">Advance & Credit Collection</h1>
             <p className="text-sm text-slate-400 mt-1">Manage advance collections and realisations</p>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <button onClick={() => handleCardClick("UNREALISED")} className="bg-white rounded-2xl border border-slate-200/60 p-4 hover:border-amber-300 hover:shadow-md transition-all text-left">
               <p className="text-xs font-medium text-slate-400">Unrealised</p>
               <p className="text-xl font-bold text-amber-600 mt-1">{formatCurrencyRounded(dashboard.unrealised)}</p>
@@ -337,6 +358,10 @@ export default function IncomeAdvancePage() {
               <p className="text-xs font-medium text-slate-400">Total Advance</p>
               <p className="text-xl font-bold text-indigo-600 mt-1">{formatCurrencyRounded(dashboard.total)}</p>
             </button>
+            <div className="bg-white rounded-2xl border border-slate-200/60 p-4">
+              <p className="text-xs font-medium text-slate-400">Receivables Received</p>
+              <p className="text-xl font-bold text-purple-600 mt-1">{formatCurrencyRounded(dashboard.creditCollected)}</p>
+            </div>
           </div>
         </div>
             <div className="flex flex-col lg:flex-row gap-4 mb-6">
@@ -397,7 +422,7 @@ export default function IncomeAdvancePage() {
                   onClick={() => openImportModal("adv")}
                   className="inline-flex items-center justify-center px-4 py-2.5 rounded-xl text-sm font-semibold transition-all border bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100"
                 >
-                  <Download size={16} className="mr-1" /> Import Adv Col.
+                  <Download size={16} className="mr-1" /> Import Adv & Cr.
                 </button>
                 <button
                   onClick={() => handleTableViewChange(tableView === "transactions" ? "logs" : "transactions")}
@@ -430,13 +455,13 @@ export default function IncomeAdvancePage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {!loading && !hasSearched && txns.length === 0 && (
+                    {!loading && !hasSearched && txns.length === 0 && rcvPayments.length === 0 && (
                       <tr><td colSpan={8} className="text-center text-slate-400 py-12">Use the search or date filter to view transactions</td></tr>
                     )}
                     {loading && (
                       <tr><td colSpan={8} className="text-center py-12"><div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin mx-auto" /></td></tr>
                     )}
-                    {!loading && hasSearched && txns.length === 0 && (
+                    {!loading && hasSearched && txns.length === 0 && rcvPayments.length === 0 && (
                       <tr><td colSpan={8} className="text-center text-slate-400 py-12">No transactions found</td></tr>
                     )}
                     {!loading && txns.map((txn) => {
@@ -469,6 +494,31 @@ export default function IncomeAdvancePage() {
                             <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium ${txn.pymt_status === "UNREALISED" ? "bg-amber-50 text-amber-600" : "bg-emerald-50 text-emerald-600"}`}>
                               {txn.pymt_status}
                             </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {!loading && rcvPayments.map((rcv) => {
+                      const sourceTxn = rcv.receivable?.incomeTxn;
+                      return (
+                        <tr key={`rcv-${rcv.id}`} className="border-b border-slate-100 last:border-0 bg-purple-50/30 hover:bg-purple-50/60 transition-colors">
+                          <td className="px-5 py-3.5 font-medium text-purple-700">{sourceTxn?.billNo || "-"}</td>
+                          <td className="px-5 py-3.5 hidden sm:table-cell text-slate-500">{formatDate(rcv.paymentDate)}</td>
+                          <td className="px-5 py-3.5 text-slate-700">{sourceTxn?.patient?.name || "-"}</td>
+                          <td className="px-5 py-3.5 hidden md:table-cell text-slate-500">{sourceTxn?.ipAdm?.ipNo || "-"}</td>
+                          <td className="px-5 py-3.5 text-right font-medium text-slate-700">{formatCurrency(rcv.amount)}</td>
+                          <td className="px-5 py-3.5">
+                            <div className="flex flex-wrap gap-1.5">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-100 rounded text-xs font-medium text-purple-700">
+                                {rcv.paymentMode?.code || "?"} {formatCurrency(rcv.amount)}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-5 py-3.5 hidden lg:table-cell">
+                            <span className="text-xs text-slate-400">-</span>
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <span className="inline-block px-2.5 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-700">RECEIVED</span>
                           </td>
                         </tr>
                       );

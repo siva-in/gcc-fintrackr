@@ -89,6 +89,64 @@ const isSkippableRow = (row, snoIdx) => {
   return false;
 };
 
+const processReceiptPayment = async ({ voucherNo, billNo, amount, billDate, cashAmt, cardAmt, chequeAmt, neftAmt, upiAmt, modeMap, source }) => {
+  const incomeTxn = await prisma.incomeTxn.findFirst({
+    where: { billNo, incomeSourceId: source.id },
+  });
+  if (!incomeTxn) {
+    throw new Error(`IncomeTxn not found for Bill No ${billNo} (${source.code})`);
+  }
+
+  const receivables = await prisma.receivable.findMany({
+    where: { incomeTxnId: incomeTxn.id },
+    orderBy: { id: "asc" },
+  });
+  if (receivables.length === 0) {
+    throw new Error(`No receivable found for Bill No ${billNo}`);
+  }
+
+  const receivable = receivables.find((r) => parseFloat(String(r.balanceAmt)) > 0) || receivables[0];
+
+  const payments = await prisma.rcvlPymt.findMany({ where: { rcvlId: receivable.id } });
+  const paidDue = payments.reduce((sum, p) => sum + (parseFloat(String(p.amount)) || 0), 0);
+  const dueAmt = parseFloat(String(receivable.dueAmt));
+  const newTotal = paidDue + amount;
+
+  if (newTotal > dueAmt) {
+    throw new Error(`Payment exceeds due amount for Bill No ${billNo} (due ${dueAmt}, total paid ${newTotal})`);
+  }
+
+  const modeCode = cashAmt > 0 ? "CASH" : cardAmt > 0 ? "CARD" : chequeAmt > 0 ? "CHEQUE" : neftAmt > 0 ? "BANK" : upiAmt > 0 ? "UPI" : null;
+  if (!modeCode) {
+    throw new Error(`No payment mode for Bill No ${billNo}`);
+  }
+
+  if (newTotal === dueAmt) {
+    await prisma.receivable.update({
+      where: { id: receivable.id },
+      data: { balanceAmt: 0, status: "PAID" },
+    });
+  } else {
+    await prisma.receivable.update({
+      where: { id: receivable.id },
+      data: { balanceAmt: dueAmt - newTotal, status: "PARTIALLY_PAID" },
+    });
+  }
+
+  await prisma.rcvlPymt.create({
+    data: {
+      rcvlId: receivable.id,
+      paymentModeId: modeMap[modeCode] || null,
+      amount,
+      paymentDate: toDateOnly(billDate),
+      transactionNo: voucherNo || null,
+      bankName: null,
+      paidBy: "SELF",
+      remarks: billNo,
+    },
+  });
+};
+
 const importAdvBilling = async (req, res) => {
   let importLog = null;
   try {
@@ -107,6 +165,10 @@ const importAdvBilling = async (req, res) => {
 
     const advSource = await prisma.incomeSource.findFirst({ where: { code: "ADV" } });
     if (!advSource) return res.status(500).json({ message: "ADV income source not found" });
+
+    const labSource = await prisma.incomeSource.findFirst({ where: { code: "LAB" } });
+    const pharmaSource = await prisma.incomeSource.findFirst({ where: { code: "PHARMACY" } })
+      || await prisma.incomeSource.findFirst({ where: { code: "PHARMA" } });
 
     const allPaymentModes = await prisma.paymentMode.findMany();
     const modeMap = {};
@@ -130,7 +192,43 @@ const importAdvBilling = async (req, res) => {
       const rowData = getRowValuesAsText(row, ADV_HEADERS, headerIdx);
 
       const voucherType = cleanValue(row[headerIdx["Voucher Type"]]);
-      if (!voucherType || String(voucherType).trim().toLowerCase() !== "advance collection") {
+      const voucherTypeLower = voucherType ? String(voucherType).trim().toLowerCase() : "";
+
+      if (voucherTypeLower === "credit collection" || voucherTypeLower === "receipt pharmacy bill") {
+        const voucherNo = cleanValue(row[headerIdx["Vou.No"]]);
+        const billNo = cleanValue(row[headerIdx["Bill No"]]);
+        const amount = parseDecimal(row[headerIdx["Amount"]]) || 0;
+        const billDate = parseAdvDate(row[headerIdx["Date"]]);
+        const cashAmt = parseDecimal(row[headerIdx["cash_amount"]]) || 0;
+        const cardAmt = parseDecimal(row[headerIdx["card_amount"]]) || 0;
+        const chequeAmt = parseDecimal(row[headerIdx["cheque_amount"]]) || 0;
+        const neftAmt = parseDecimal(row[headerIdx["neft_amount"]]) || 0;
+        const upiAmt = parseDecimal(row[headerIdx["UPI Amt"]]) || 0;
+
+        if (!billNo) {
+          failed++;
+          errors.push({ rowNumber: rowNum, rowData, reason: "Missing Bill No" });
+          continue;
+        }
+
+        const source = voucherTypeLower === "credit collection" ? labSource : pharmaSource;
+        if (!source) {
+          failed++;
+          errors.push({ rowNumber: rowNum, rowData, reason: `Income source not found for ${voucherType}` });
+          continue;
+        }
+
+        try {
+          await processReceiptPayment({ voucherNo, billNo, amount, billDate, cashAmt, cardAmt, chequeAmt, neftAmt, upiAmt, modeMap, source });
+          inserted++;
+        } catch (err) {
+          failed++;
+          errors.push({ rowNumber: rowNum, rowData, reason: err.message || "Processing error" });
+        }
+        continue;
+      }
+
+      if (voucherTypeLower !== "advance collection") {
         skipped++;
         continue;
       }
@@ -287,7 +385,16 @@ const getAdvDashboard = async (req, res) => {
 
     const paymentModes = Object.values(modeTotals).sort((a, b) => b.total - a.total);
 
-    res.json({ unrealised, realised, cash, bank, card, paymentModes, total: unrealised + realised });
+    const pmtDateFilter = {};
+    if (fromDate) pmtDateFilter.gte = new Date(`${fromDate}T00:00:00.000Z`);
+    if (toDate) pmtDateFilter.lte = new Date(`${toDate}T23:59:59.999Z`);
+    const creditAgg = await prisma.rcvlPymt.aggregate({
+      where: { paymentDate: pmtDateFilter },
+      _sum: { amount: true },
+    });
+    const creditCollected = parseFloat(String(creditAgg._sum.amount)) || 0;
+
+    res.json({ unrealised, realised, cash, bank, card, paymentModes, creditCollected, total: unrealised + realised });
   } catch (error) {
     console.error("GetAdvDashboard error:", error);
     res.status(500).json({ message: "Internal server error" });
@@ -336,7 +443,25 @@ const getAdvTxns = async (req, res) => {
 
     const where = { AND: andConditions };
 
-    const [txns, total] = await Promise.all([
+    const pmtDateFilter = {};
+    if (fromDate) pmtDateFilter.gte = new Date(`${fromDate}T00:00:00.000Z`);
+    if (toDate) pmtDateFilter.lte = new Date(`${toDate}T23:59:59.999Z`);
+
+    const rcvWhere = { paymentDate: pmtDateFilter };
+    if (search) {
+      rcvWhere.receivable = {
+        incomeTxn: {
+          OR: [
+            { billNo: { contains: search, mode: "insensitive" } },
+            { patient: { name: { contains: search, mode: "insensitive" } } },
+            { patient: { uhid: { contains: search, mode: "insensitive" } } },
+            { ipAdm: { ipNo: { contains: search, mode: "insensitive" } } },
+          ],
+        },
+      };
+    }
+
+    const [txns, total, rcvPayments] = await Promise.all([
       prisma.incomeTxn.findMany({
         where,
         skip,
@@ -351,9 +476,27 @@ const getAdvTxns = async (req, res) => {
         },
       }),
       prisma.incomeTxn.count({ where }),
+      prisma.rcvlPymt.findMany({
+        where: rcvWhere,
+        orderBy: [{ paymentDate: "desc" }, { id: "desc" }],
+        take: 100,
+        include: {
+          paymentMode: true,
+          receivable: {
+            include: {
+              incomeTxn: {
+                include: {
+                  patient: { select: { id: true, name: true, uhid: true } },
+                  ipAdm: { select: { id: true, ipNo: true } },
+                },
+              },
+            },
+          },
+        },
+      }),
     ]);
 
-    res.json({ txns, pagination: { total, page: parseInt(page), limit: parseInt(limit), pages: Math.ceil(total / parseInt(limit)) } });
+    res.json({ txns, rcvPayments, pagination: { total, page: parseInt(page), limit: parseInt(limit), pages: Math.ceil(total / parseInt(limit)) } });
   } catch (error) {
     console.error("GetAdvTxns error:", error);
     res.status(500).json({ message: "Internal server error" });
