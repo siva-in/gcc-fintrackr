@@ -187,6 +187,13 @@ const importLabBilling = async (req, res) => {
         const creditAmt = parseDecimal(row[headerIdx["Credit Amount"]]) || 0;
         const creditStatus = cleanValue(row[headerIdx["Credit Status"]]);
 
+        const amt = cashAmt + bankAmt + creditAmt;
+        if (Math.abs(amt - billAmt) > 0.009) {
+          failed++;
+          errors.push({ rowNumber: rowNum, rowData, reason: `Amount mismatch expect (Net Amount) ${billAmt}; found ${amt}` });
+          continue;
+        }
+
         let patientId = null;
         if (uhid) {
           const patient = await prisma.patient.findFirst({ where: { uhid } });

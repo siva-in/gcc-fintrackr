@@ -188,10 +188,17 @@ const importIPBilling = async (req, res) => {
       const companyAmt = parseDecimal(row[headerIdx["company_amount"]]) || 0;
       const insuranceAmt = parseDecimal(row[headerIdx["insurance_amount"]]) || 0;
 
-      const paidAmt = cashAmt + bankAmt + companyAmt + insuranceAmt;
-      const unpaid = creditAmt;
+      const paidAmt = cashAmt + bankAmt;
+      const unpaid = creditAmt + companyAmt + insuranceAmt;
       const net = billAmt;
       const txnStatusBase = bankAmt > 0 ? "REVIEW_REQ" : "UNVERIFIED";
+
+      const amt = cashAmt + bankAmt + creditAmt + companyAmt + insuranceAmt;
+      if (Math.abs(amt - net) > 0.009) {
+        failed++;
+        errors.push({ rowNumber: headerRowIndex + 2 + i, rowData: getRowValuesAsText(row, IP_BILLING_HEADERS, headerIdx), reason: `Amount mismatch expect (Net Amount) ${net}; found ${amt}` });
+        continue;
+      }
 
       let pymtStatus, txnStatus;
       let errorReason = null;
@@ -427,7 +434,6 @@ const importIPDetailReport = async (req, res) => {
       }
 
       const uhid = cleanValue(row[headerIdx["UHID"]]);
-      const name = cleanValue(row[headerIdx["Patient Name"]]);
       const description = cleanValue(row[headerIdx["Description"]]);
       const amount = parseDecimal(row[headerIdx["Amount"]]) || 0;
       const billDate = parseDate(row[headerIdx["Bill Date"]]);
@@ -443,33 +449,6 @@ const importIPDetailReport = async (req, res) => {
         billNotFoundCounts[billNo].count++;
         skipped++;
         continue;
-      }
-
-      // Find or create patient by UHID and link to IncomeTxn
-      if (uhid) {
-        let patient = await prisma.patient.findFirst({ where: { uhid: uhid } });
-        if (!patient) {
-          patient = await prisma.patient.create({
-            data: { name: name || "Unknown", uhid: uhid },
-          });
-        } else if (!patient.name && name) {
-          await prisma.patient.update({ where: { id: patient.id }, data: { name } });
-        }
-
-        const ipId = incomeTxn.ipId;
-
-        if (patient && ipId) {
-          await prisma.incomeTxn.updateMany({
-            where: { ipId, incomeSourceId: ipSource.id, patientId: null },
-            data: { patientId: patient.id },
-          });
-        } else if (patient) {
-          const nextTxnStatus = incomeTxn.txn_status === "VERIFIED" ? "UNVERIFIED" : undefined;
-          await prisma.incomeTxn.update({
-            where: { id: incomeTxn.id },
-            data: withIncomeTxnStatusData({ patientId: patient.id }, undefined, nextTxnStatus),
-          });
-        }
       }
 
       try {

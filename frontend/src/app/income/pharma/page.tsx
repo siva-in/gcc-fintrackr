@@ -928,12 +928,12 @@ export default function IncomePharmaPage() {
             Upload a Pharma Sales Excel file with columns:{" "}
             <strong>
               S.No, Entry Name, Entry Date, Entry No, Customer, Total Amt, Discount, Tax, Net Amount, Patient_name,
-              Payment Mode, Mobile No, Credit Status
+              Mobile No, Credit Status, Cash, Credit, Bank
             </strong>
           </p>
           <p className="text-xs text-slate-400">
-            Patients are matched when Customer starts with GCCH (UHID before the dash). Payment Mode may be a CSV (e.g.
-            Cash,Bank). Credit sales create receivables; multi-mode or Bank payments are flagged for review.
+            Patients are matched when Customer starts with GCCH (UHID before the dash). Cash + Credit + Bank must equal Net
+            Amount. Credit sales create receivables; Bank payments are flagged for review.
           </p>
 
           <div className="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center hover:border-indigo-400 transition-colors">

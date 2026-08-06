@@ -72,6 +72,7 @@ interface RcvPayment {
       billNo: string;
       patient: { name: string } | null;
       ipAdm: { ipNo: string } | null;
+      incomeSource: { code: string; name: string } | null;
     } | null;
   } | null;
 }
@@ -121,6 +122,10 @@ export default function IncomeAdvancePage() {
   const [page, setPage] = useState(1);
   const [hasSearched, setHasSearched] = useState(false);
   const [rcvPayments, setRcvPayments] = useState<RcvPayment[]>([]);
+  const [rcvPage, setRcvPage] = useState(1);
+  const [rcvPagination, setRcvPagination] = useState({ total: 0, page: 1, pages: 1 });
+  const [viewType, setViewType] = useState<"advance" | "credit">("advance");
+  const [rcvSourceFilter, setRcvSourceFilter] = useState("");
 
   const [importLogs, setImportLogs] = useState<ImportLogEntry[]>([]);
   const [logPagination, setLogPagination] = useState({ total: 0, page: 1, pages: 1 });
@@ -161,7 +166,7 @@ export default function IncomeAdvancePage() {
     fetchDashboard(dashFromDate, dashToDate);
   }, [dashFromDate, dashToDate, fetchDashboard]);
 
-  const fetchTxns = async (p = page, s = search, fd = fromDate, td = toDate, pm = txnPaymentFilter, ps = txnPymtStatusFilter) => {
+  const fetchTxns = async (p = page, s = search, fd = fromDate, td = toDate, pm = txnPaymentFilter, ps = txnPymtStatusFilter, rp = rcvPage, src = rcvSourceFilter) => {
     setLoading(true);
     try {
       const params = new URLSearchParams({ page: String(p), limit: "10" });
@@ -170,10 +175,13 @@ export default function IncomeAdvancePage() {
       if (td) params.set("toDate", td);
       if (pm) params.set("paymentMode", pm);
       if (ps) params.set("pymtStatus", ps);
+      if (rp) params.set("rcvPage", String(rp));
+      if (src) params.set("source", src);
       const { data } = await api.get(`/income/advandcrcol/txns?${params.toString()}`);
       setTxns(data.txns || []);
       setRcvPayments(data.rcvPayments || []);
       setPagination(data.pagination || { total: 0, page: 1, pages: 1 });
+      setRcvPagination(data.rcvPagination || { total: 0, page: 1, pages: 1 });
     } catch {
       toast.error("Failed to load transactions");
     } finally {
@@ -245,6 +253,11 @@ export default function IncomeAdvancePage() {
   const handlePageChange = (p: number) => {
     setPage(p);
     fetchTxns(p);
+  };
+
+  const handleRcvPageChange = (p: number) => {
+    setRcvPage(p);
+    fetchTxns(page, search, fromDate, toDate, txnPaymentFilter, txnPymtStatusFilter, p);
   };
 
   const handleLogPageChange = (p: number) => {
@@ -389,23 +402,54 @@ export default function IncomeAdvancePage() {
                       ))}
                     </select>
                   </div>
+                  <div className="flex items-center gap-4 px-1">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="viewType"
+                        checked={viewType === "advance"}
+                        onChange={() => setViewType("advance")}
+                        className="accent-indigo-600"
+                      />
+                      <span className="text-sm font-medium text-slate-700">Advance</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="viewType"
+                        checked={viewType === "credit"}
+                        onChange={() => setViewType("credit")}
+                        className="accent-indigo-600"
+                      />
+                      <span className="text-sm font-medium text-slate-700">Credit</span>
+                    </label>
+                  </div>
                   <div className="relative flex-1 min-w-[200px] max-w-xs">
                   <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input type="text" placeholder="Bill No, IP No..." value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSearch()} className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all" />
                 </div>
                 <select value={txnPaymentFilter} onChange={(e) => setTxnPaymentFilter(e.target.value)} className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500">
-                  <option value="">All Modes</option>
+                  <option value="">All Payments</option>
                   <option value="CASH">Cash</option>
                   <option value="BANK">Bank</option>
                   <option value="CARD">Card</option>
                   <option value="UPI">UPI</option>
                   <option value="CHEQUE">Cheque</option>
                 </select>
+                {viewType === "advance" && (
                 <select value={txnPymtStatusFilter} onChange={(e) => setTxnPymtStatusFilter(e.target.value)} className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500">
                   <option value="">All Status</option>
                   <option value="UNREALISED">Unrealised</option>
                   <option value="REALISED">Realised</option>
                 </select>
+                )}
+                {viewType === "credit" && (
+                <select value={rcvSourceFilter} onChange={(e) => setRcvSourceFilter(e.target.value)} className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500">
+                  <option value="">All Sources</option>
+                  <option value="LAB">Lab</option>
+                  <option value="PHARMA">Pharma</option>
+                </select>
+                )}
                 <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" />
                 <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" />
                 <Button onClick={handleSearch}><Search size={14} className="mr-1" /> Search</Button>
@@ -444,27 +488,32 @@ export default function IncomeAdvancePage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-200/60">
-                      <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Vou.No</th>
+                      <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">{viewType === "advance" ? "Vou.No" : "Bill No"}</th>
                       <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden sm:table-cell">Date</th>
                       <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Patient</th>
-                      <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden md:table-cell">IP No</th>
+                      <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden md:table-cell">{viewType === "advance" ? "IP No" : "Source"}</th>
                       <th className="text-right px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Amount</th>
                       <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Payment</th>
-                      <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden lg:table-cell">Realised Bill</th>
+                      {viewType === "advance" && (
+                        <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider hidden lg:table-cell">Realised Bill</th>
+                      )}
                       <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wider">Status</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {!loading && !hasSearched && txns.length === 0 && rcvPayments.length === 0 && (
-                      <tr><td colSpan={8} className="text-center text-slate-400 py-12">Use the search or date filter to view transactions</td></tr>
+                    {!loading && !hasSearched && (
+                      <tr><td colSpan={viewType === "advance" ? 8 : 7} className="text-center text-slate-400 py-12">Use the search or date filter to view transactions</td></tr>
                     )}
                     {loading && (
-                      <tr><td colSpan={8} className="text-center py-12"><div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin mx-auto" /></td></tr>
+                      <tr><td colSpan={viewType === "advance" ? 8 : 7} className="text-center py-12"><div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin mx-auto" /></td></tr>
                     )}
-                    {!loading && hasSearched && txns.length === 0 && rcvPayments.length === 0 && (
-                      <tr><td colSpan={8} className="text-center text-slate-400 py-12">No transactions found</td></tr>
+                    {!loading && hasSearched && viewType === "advance" && txns.length === 0 && (
+                      <tr><td colSpan={8} className="text-center text-slate-400 py-12">No advance transactions found</td></tr>
                     )}
-                    {!loading && txns.map((txn) => {
+                    {!loading && hasSearched && viewType === "credit" && rcvPayments.length === 0 && (
+                      <tr><td colSpan={7} className="text-center text-slate-400 py-12">No credit receipts found</td></tr>
+                    )}
+                    {viewType === "advance" && !loading && txns.map((txn) => {
                       const isUnrealised = txn.pymt_status === "UNREALISED";
                       return (
                         <tr key={txn.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50 transition-colors">
@@ -498,14 +547,18 @@ export default function IncomeAdvancePage() {
                         </tr>
                       );
                     })}
-                    {!loading && rcvPayments.map((rcv) => {
+                    {viewType === "credit" && !loading && rcvPayments.map((rcv) => {
                       const sourceTxn = rcv.receivable?.incomeTxn;
+                      const sourceCode = sourceTxn?.incomeSource?.code;
+                      const sourceLabel = sourceCode === "LAB" ? "Lab" : sourceCode === "PHARMACY" || sourceCode === "PHARMA" ? "Pharma" : (sourceCode || "-");
                       return (
                         <tr key={`rcv-${rcv.id}`} className="border-b border-slate-100 last:border-0 bg-purple-50/30 hover:bg-purple-50/60 transition-colors">
                           <td className="px-5 py-3.5 font-medium text-purple-700">{sourceTxn?.billNo || "-"}</td>
                           <td className="px-5 py-3.5 hidden sm:table-cell text-slate-500">{formatDate(rcv.paymentDate)}</td>
                           <td className="px-5 py-3.5 text-slate-700">{sourceTxn?.patient?.name || "-"}</td>
-                          <td className="px-5 py-3.5 hidden md:table-cell text-slate-500">{sourceTxn?.ipAdm?.ipNo || "-"}</td>
+                          <td className="px-5 py-3.5 hidden md:table-cell">
+                            <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">{sourceLabel}</span>
+                          </td>
                           <td className="px-5 py-3.5 text-right font-medium text-slate-700">{formatCurrency(rcv.amount)}</td>
                           <td className="px-5 py-3.5">
                             <div className="flex flex-wrap gap-1.5">
@@ -513,9 +566,6 @@ export default function IncomeAdvancePage() {
                                 {rcv.paymentMode?.code || "?"} {formatCurrency(rcv.amount)}
                               </span>
                             </div>
-                          </td>
-                          <td className="px-5 py-3.5 hidden lg:table-cell">
-                            <span className="text-xs text-slate-400">-</span>
                           </td>
                           <td className="px-5 py-3.5">
                             <span className="inline-block px-2.5 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-700">RECEIVED</span>
@@ -526,8 +576,11 @@ export default function IncomeAdvancePage() {
                   </tbody>
                 </table>
               </div>
-              {hasSearched && (
+              {viewType === "advance" && hasSearched && (
                 <Pagination page={page} totalPages={pagination.pages} total={pagination.total} limit={10} onPageChange={handlePageChange} />
+              )}
+              {viewType === "credit" && rcvPayments.length > 0 && (
+                <Pagination page={rcvPagination.page} totalPages={rcvPagination.pages} total={rcvPagination.total} limit={10} onPageChange={handleRcvPageChange} />
               )}
             </div>
             )}

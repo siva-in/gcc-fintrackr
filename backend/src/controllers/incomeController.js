@@ -210,6 +210,13 @@ const importOPBilling = async (req, res) => {
         const bankAmt = parseDecimal(row[headerIdx["Bank Amt"]]) || 0;
         const creditAmt = parseDecimal(row[headerIdx["Credit Amt"]]) || 0;
 
+        const amt = cashAmt + bankAmt + creditAmt;
+        if (Math.abs(amt - billAmt) > 0.009) {
+          failed++;
+          errors.push({ rowNumber: rowNum, rowData, reason: `Amount mismatch expect (Net Amount) ${billAmt}; found ${amt}` });
+          continue;
+        }
+
         const paidAmt = cashAmt + bankAmt;
         const unpaid = creditAmt;
         const net = billAmt;
@@ -484,11 +491,11 @@ const importOPDetailReport = async (req, res) => {
         }
 
         if (partyId) {
-          const name = incomeTxn.patient?.name || null;
+          const remarks = `${incomeTxn.patient?.name || ""} ${billNo}`.trim();
           const dueDate = billDate ? addDays(billDate, 15) : null;
 
           const existingPayable = await prisma.payable.findFirst({
-            where: { incomeTxnId: incomeTxn.id, drId: partyId, billedAmt: amount, remarks: name },
+            where: { incomeTxnId: incomeTxn.id, drId: partyId, billedAmt: amount, remarks },
           });
 
           if (existingPayable) {
@@ -509,7 +516,7 @@ const importOPDetailReport = async (req, res) => {
                 payableAmt: null,
                 balanceAmt: amount,
                 status: "PENDING",
-                remarks: name,
+                remarks,
                 createdBy: req.user?.username || null,
               },
             });

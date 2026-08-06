@@ -264,6 +264,10 @@ const importAdvBilling = async (req, res) => {
 
         let incomeTxn;
         if (existing) {
+          if (existing.pymt_status === "REALISED") {
+            skipped++;
+            continue;
+          }
           incomeTxn = await prisma.incomeTxn.update({
             where: { id: existing.id },
             data: {
@@ -448,20 +452,33 @@ const getAdvTxns = async (req, res) => {
     if (toDate) pmtDateFilter.lte = new Date(`${toDate}T23:59:59.999Z`);
 
     const rcvWhere = { paymentDate: pmtDateFilter };
+    const rcvIncomeTxnWhere = {};
     if (search) {
-      rcvWhere.receivable = {
-        incomeTxn: {
-          OR: [
-            { billNo: { contains: search, mode: "insensitive" } },
-            { patient: { name: { contains: search, mode: "insensitive" } } },
-            { patient: { uhid: { contains: search, mode: "insensitive" } } },
-            { ipAdm: { ipNo: { contains: search, mode: "insensitive" } } },
-          ],
-        },
-      };
+      rcvIncomeTxnWhere.OR = [
+        { billNo: { contains: search, mode: "insensitive" } },
+        { patient: { name: { contains: search, mode: "insensitive" } } },
+        { patient: { uhid: { contains: search, mode: "insensitive" } } },
+        { ipAdm: { ipNo: { contains: search, mode: "insensitive" } } },
+      ];
+    }
+    const rcvSource = req.query.source;
+    if (rcvSource) {
+      const codes = rcvSource === "PHARMA" ? ["PHARMACY", "PHARMA"] : [rcvSource];
+      rcvIncomeTxnWhere.incomeSource = { code: { in: codes } };
+    }
+    if (Object.keys(rcvIncomeTxnWhere).length > 0) {
+      rcvWhere.receivable = { incomeTxn: rcvIncomeTxnWhere };
+    }
+    if (paymentMode) {
+      const modes = paymentMode.split(",").map((m) => m.trim().toUpperCase());
+      rcvWhere.paymentMode = { code: { in: modes } };
     }
 
-    const [txns, total, rcvPayments] = await Promise.all([
+    const rcvPage = parseInt(req.query.rcvPage) || 1;
+    const rcvLimit = 10;
+    const rcvSkip = (rcvPage - 1) * rcvLimit;
+
+    const [txns, total, rcvPayments, rcvTotal] = await Promise.all([
       prisma.incomeTxn.findMany({
         where,
         skip,
@@ -479,7 +496,8 @@ const getAdvTxns = async (req, res) => {
       prisma.rcvlPymt.findMany({
         where: rcvWhere,
         orderBy: [{ paymentDate: "desc" }, { id: "desc" }],
-        take: 100,
+        skip: rcvSkip,
+        take: rcvLimit,
         include: {
           paymentMode: true,
           receivable: {
@@ -488,15 +506,22 @@ const getAdvTxns = async (req, res) => {
                 include: {
                   patient: { select: { id: true, name: true, uhid: true } },
                   ipAdm: { select: { id: true, ipNo: true } },
+                  incomeSource: { select: { code: true, name: true } },
                 },
               },
             },
           },
         },
       }),
+      prisma.rcvlPymt.count({ where: rcvWhere }),
     ]);
 
-    res.json({ txns, rcvPayments, pagination: { total, page: parseInt(page), limit: parseInt(limit), pages: Math.ceil(total / parseInt(limit)) } });
+    res.json({
+      txns,
+      rcvPayments,
+      pagination: { total, page: parseInt(page), limit: parseInt(limit), pages: Math.ceil(total / parseInt(limit)) },
+      rcvPagination: { total: rcvTotal, page: rcvPage, limit: rcvLimit, pages: Math.ceil(rcvTotal / rcvLimit) },
+    });
   } catch (error) {
     console.error("GetAdvTxns error:", error);
     res.status(500).json({ message: "Internal server error" });

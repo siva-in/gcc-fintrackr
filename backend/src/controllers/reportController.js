@@ -116,7 +116,7 @@ const getReceivableReport = async (req, res) => {
 
     const where = andConditions.length > 0 ? { AND: andConditions } : {};
 
-    const [receivables, total] = await Promise.all([
+    const [receivables, total, agingRows] = await Promise.all([
       prisma.receivable.findMany({
         where,
         skip,
@@ -137,14 +137,79 @@ const getReceivableReport = async (req, res) => {
         },
       }),
       prisma.receivable.count({ where }),
+      prisma.receivable.findMany({
+        where,
+        select: {
+          dueAmt: true,
+          balanceAmt: true,
+          dueDate: true,
+          incomeTxn: { select: { incomeSource: { select: { code: true, name: true } } } },
+        },
+      }),
     ]);
 
-    const totalDueAmt = receivables.reduce((sum, r) => sum + parseFloat(String(r.dueAmt || 0)), 0);
-    const totalBalanceAmt = receivables.reduce((sum, r) => sum + parseFloat(String(r.balanceAmt || 0)), 0);
+    const totalDueAmt = agingRows.reduce((sum, r) => sum + parseFloat(String(r.dueAmt || 0)), 0);
+    const totalBalanceAmt = agingRows.reduce((sum, r) => sum + parseFloat(String(r.balanceAmt || 0)), 0);
+
+    const aging = { current: 0, d1_30: 0, d31_60: 0, d61_90: 0, d90: 0 };
+    const now = Date.now();
+    const DAY = 86400000;
+    const sourceMap = {};
+    for (const r of agingRows) {
+      const bal = parseFloat(String(r.balanceAmt)) || 0;
+      let days = 0;
+      if (r.dueDate) {
+        const due = new Date(r.dueDate).getTime();
+        days = Math.floor((now - due) / DAY);
+      }
+      if (days <= 0) aging.current += bal;
+      else if (days <= 30) aging.d1_30 += bal;
+      else if (days <= 60) aging.d31_60 += bal;
+      else if (days <= 90) aging.d61_90 += bal;
+      else aging.d90 += bal;
+
+      const code = r.incomeTxn?.incomeSource?.code || "OTHER";
+      const name = r.incomeTxn?.incomeSource?.name || "Other";
+      if (!sourceMap[code]) sourceMap[code] = { code, name, dueAmt: 0, balanceAmt: 0 };
+      sourceMap[code].dueAmt += parseFloat(String(r.dueAmt || 0));
+      sourceMap[code].balanceAmt += bal;
+    }
+    const bySource = Object.values(sourceMap).map((s) => ({
+      ...s,
+      dueAmt: Number(s.dueAmt.toFixed(2)),
+      balanceAmt: Number(s.balanceAmt.toFixed(2)),
+      receivedAmt: Number((s.dueAmt - s.balanceAmt).toFixed(2)),
+    }));
+
+    const [modeGroups, paymentModes, pendingBills] = await Promise.all([
+      prisma.rcvlPymt.groupBy({
+        by: ["paymentModeId"],
+        where: { receivable: where },
+        _sum: { amount: true },
+      }),
+      prisma.paymentMode.findMany({ select: { id: true, code: true, name: true } }),
+      prisma.receivable.count({ where: { AND: [...andConditions, { status: { not: "PAID" } }] } }),
+    ]);
+    const modeNameMap = new Map(paymentModes.map((m) => [m.id, m]));
+    const modeMap = {};
+    for (const g of modeGroups) {
+      const mode = g.paymentModeId != null ? modeNameMap.get(g.paymentModeId) : null;
+      const code = mode?.code || "OTHER";
+      const name = mode?.name || "Other";
+      if (!modeMap[code]) modeMap[code] = { code, name, amount: 0 };
+      modeMap[code].amount += parseFloat(String(g._sum.amount || 0));
+    }
+    const byMode = Object.values(modeMap)
+      .map((m) => ({ ...m, amount: Number(m.amount.toFixed(2)) }))
+      .sort((a, b) => b.amount - a.amount);
 
     res.json({
       receivables,
       summary: { totalDueAmt, totalBalanceAmt, count: total },
+      pendingBills,
+      aging,
+      bySource,
+      byMode,
       pagination: { total, page: parseInt(page), limit: parseInt(limit), pages: Math.ceil(total / parseInt(limit)) },
     });
   } catch (error) {
@@ -412,4 +477,69 @@ const getBookOfAccounts = async (req, res) => {
   }
 };
 
-module.exports = { getPayableReport, getReceivableReport, getIncomeSources, getIPAdmissionReport, getIncomeSummary, getBookOfAccounts };
+const getReportPaymentModes = async (_req, res) => {
+  try {
+    const modes = await prisma.paymentMode.findMany({ orderBy: { name: "asc" } });
+    res.json(modes);
+  } catch (error) {
+    console.error("GetReportPaymentModes error:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+const recordReceivablePayment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { amount, paymentModeId, paymentDate, transactionNo, bankName, paidBy, remarks } = req.body;
+
+    const rcvlId = parseInt(id);
+    if (!rcvlId) return res.status(400).json({ message: "Invalid receivable id" });
+
+    const amt = parseFloat(amount);
+    if (!amt || amt <= 0) return res.status(400).json({ message: "Amount must be greater than zero" });
+
+    const receivable = await prisma.receivable.findUnique({ where: { id: rcvlId } });
+    if (!receivable) return res.status(404).json({ message: "Receivable not found" });
+
+    if (!["INSURANCE", "CORPORATE"].includes(receivable.arType)) {
+      return res.status(400).json({ message: "Payments can only be recorded for Insurance or Company receivables" });
+    }
+
+    const balanceAmt = parseFloat(String(receivable.balanceAmt)) || 0;
+    if (amt > balanceAmt + 0.01) {
+      return res.status(400).json({ message: `Payment amount exceeds balance of ${balanceAmt}` });
+    }
+
+    if (!paymentModeId) return res.status(400).json({ message: "Payment mode is required" });
+    const mode = await prisma.paymentMode.findUnique({ where: { id: parseInt(paymentModeId) } });
+    if (!mode) return res.status(400).json({ message: "Invalid payment mode" });
+
+    const newBalance = Math.max(0, Math.round((balanceAmt - amt) * 100) / 100);
+
+    await prisma.$transaction([
+      prisma.receivable.update({
+        where: { id: rcvlId },
+        data: { balanceAmt: newBalance, status: newBalance <= 0 ? "PAID" : "PARTIALLY_PAID" },
+      }),
+      prisma.rcvlPymt.create({
+        data: {
+          rcvlId,
+          paymentModeId: mode.id,
+          amount: amt,
+          paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
+          transactionNo: transactionNo || null,
+          bankName: bankName || null,
+          paidBy: paidBy || "SELF",
+          remarks: remarks || null,
+        },
+      }),
+    ]);
+
+    res.json({ message: "Payment recorded successfully", balanceAmt: newBalance, status: newBalance <= 0 ? "PAID" : "PARTIALLY_PAID" });
+  } catch (error) {
+    console.error("RecordReceivablePayment error:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+module.exports = { getPayableReport, getReceivableReport, getIncomeSources, getIPAdmissionReport, getIncomeSummary, getBookOfAccounts, getReportPaymentModes, recordReceivablePayment };

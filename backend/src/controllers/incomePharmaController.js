@@ -3,7 +3,7 @@ const { readFirstSheetRowsFromBuffer } = require("../utils/excel");
 
 const DUMMY_VALUES = ["--none--", "undefined", "null", "n/a", "na", "-"];
 
-const PHARMA_HEADERS = ["S.No", "Entry Name", "Entry Date", "Entry No", "Customer", "Total Amt", "Discount", "Tax", "Net Amount", "Patient_name", "Payment Mode", "Mobile No", "Credit Status"];
+const PHARMA_HEADERS = ["S.No", "Entry Name", "Entry Date", "Entry No", "Customer", "Total Amt", "Discount", "Tax", "Net Amount", "Patient_name", "Mobile No", "Credit Status", "Cash", "Credit", "Bank"];
 
 const parseDate = (val) => {
   if (!val) return null;
@@ -190,19 +190,26 @@ const importPharmaBilling = async (req, res) => {
           }
         }
 
-        // Payment mode parsing
-        const paymentModeRaw = cleanValue(row[headerIdx["Payment Mode"]]) || "";
-        const modes = paymentModeRaw.split(",").map((m) => m.trim()).filter(Boolean);
-        const lower = paymentModeRaw.toLowerCase();
-        const hasCredit = lower.includes("credit");
-        const exactCredit = lower === "credit";
-        const hasCash = lower.includes("cash");
-        const hasBank = lower.includes("bank");
+        // Payment split from Cash/Credit/Bank columns
+        const cashAmt = parseDecimal(row[headerIdx["Cash"]]) || 0;
+        const creditAmt = parseDecimal(row[headerIdx["Credit"]]) || 0;
+        const bankAmt = parseDecimal(row[headerIdx["Bank"]]) || 0;
+        const amt = cashAmt + creditAmt + bankAmt;
+
+        if (Math.abs(amt - billAmt) > 0.009) {
+          failed++;
+          errors.push({ rowNumber: rowNum, rowData, reason: `Amount mismatch expected (Net Amt) ${billAmt} & found ${amt}` });
+          continue;
+        }
+
+        const hasCredit = creditAmt > 0;
+        const hasCash = cashAmt > 0;
+        const hasBank = bankAmt > 0;
 
         let pymtStatus;
-        if (exactCredit) pymtStatus = "UNPAID";
-        else if (hasCredit) pymtStatus = "PARTIALPAID";
-        else pymtStatus = "FULLYPAID";
+        if (Math.abs(creditAmt - billAmt) < 0.009) pymtStatus = "UNPAID";
+        else if (Math.abs(cashAmt - billAmt) < 0.009 || Math.abs(bankAmt - billAmt) < 0.009 || Math.abs(cashAmt + bankAmt - billAmt) < 0.009) pymtStatus = "FULLYPAID";
+        else pymtStatus = "PARTIALPAID";
 
         let txnStatus = "UNVERIFIED";
         let errorReason = null;
@@ -210,9 +217,9 @@ const importPharmaBilling = async (req, res) => {
         if (ipError) {
           txnStatus = "ERROR";
           errorReason = ipError;
-        } else if (modes.length > 1 || hasBank) {
+        } else if (bankAmt > 0) {
           txnStatus = "REVIEW_REQ";
-          errorReason = paymentModeRaw;
+          errorReason = `Bank ${bankAmt}`;
         }
 
         const existing = await prisma.incomeTxn.findFirst({ where: { billNo } });
@@ -254,44 +261,42 @@ const importPharmaBilling = async (req, res) => {
         }
 
         if (txnStatus !== "ERROR") {
-          // Create received payments / receivables
-          if (hasCredit) {
-            if (patientId) {
-              await prisma.receivable.create({
-                data: {
-                  arType: "PATIENT",
-                  patId: patientId,
-                  incomeTxnId: incomeTxn.id,
-                  billDate: toDateOnly(billDate) || new Date(),
-                  dueDate: toDateOnly(billDate),
-                  dueAmt: billAmt,
-                  balanceAmt: billAmt,
-                  status: "PENDING",
-                  remarks: "Credit sale",
-                },
-              });
-            }
+          if (hasCredit && patientId) {
+            await prisma.receivable.create({
+              data: {
+                arType: "PATIENT",
+                patId: patientId,
+                incomeTxnId: incomeTxn.id,
+                billDate: toDateOnly(billDate) || new Date(),
+                dueDate: toDateOnly(billDate),
+                dueAmt: creditAmt,
+                balanceAmt: creditAmt,
+                status: "PENDING",
+                remarks: "Credit sale",
+              },
+            });
           }
           if (hasCash) {
             await prisma.rcvdPymt.create({
               data: {
                 incomeTxnId: incomeTxn.id,
                 paymentModeId: modeMap["CASH"] || null,
-                amount: billAmt,
+                amount: cashAmt,
                 paymentDate: toDateOnly(billDate),
                 paidBy,
-                remarks: paymentModeRaw || null,
+                remarks: "Cash",
               },
             });
-          } else if (hasBank) {
+          }
+          if (hasBank) {
             await prisma.rcvdPymt.create({
               data: {
                 incomeTxnId: incomeTxn.id,
                 paymentModeId: modeMap["BANK"] || null,
-                amount: billAmt,
+                amount: bankAmt,
                 paymentDate: toDateOnly(billDate),
                 paidBy,
-                remarks: paymentModeRaw || null,
+                remarks: "Bank",
               },
             });
           }
